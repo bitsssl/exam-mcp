@@ -69,6 +69,48 @@
       ? [createBreadcrumbItem(currentRoute)]
       : matched.map(createBreadcrumbItem)
 
+    // 试卷详情从“答卷管理”进入；详情路由沿用了阅卷模块的 URL，
+    // 因此在面包屑中将其归到答卷菜单，避免显示成“科目与考试”。
+    const answerRoutes = new Set([
+      'teacher-package-detail',
+      'teacher-student-score-compare',
+      'teacher-answer-detail'
+    ])
+    if (answerRoutes.has(String(currentRoute.name || ''))) {
+      items = [
+        { path: '/answers', meta: { title: '答卷管理' } },
+        { path: currentRoute.path, meta: { ...currentRoute.meta, title: currentRoute.name === 'teacher-package-detail' ? '试卷详情' : currentRoute.meta.title } }
+      ]
+    }
+
+    const resultRouteNames: Record<string, { path: string; title: string }> = {
+      'teacher-package-trial-results': {
+        path: '/grading/trial-results',
+        title: '查看试阅结果'
+      },
+      'teacher-package-formal-results': {
+        path: '/grading/formal-results',
+        title: '查看正式评阅结果'
+      }
+    }
+    const resultRoute = resultRouteNames[String(currentRoute.name || '')]
+    if (resultRoute) {
+      items = [
+        { path: '/grading', meta: { title: '阅卷管理' } },
+        { path: resultRoute.path, meta: { title: resultRoute.title } },
+        { path: currentRoute.path, meta: { ...currentRoute.meta, title: '结果详情' } }
+      ]
+    }
+
+    // 组装模板页从考试详情进入，但业务上属于独立的“阅卷模板管理”模块。
+    // 将隐藏详情页归到对应一级菜单，避免显示成“科目与考试 / 阅卷模板”。
+    if (String(currentRoute.name || '') === 'teacher-grading-templates') {
+      items = [
+        { path: '/grading-templates', meta: { title: '阅卷模板管理' } },
+        { path: currentRoute.path, meta: { ...currentRoute.meta, title: '组装阅卷模板' } }
+      ]
+    }
+
     // 过滤包裹容器：如果有多个项目且第一个是容器路由（如 /outside），则移除它
     if (items.length > 1 && isWrapperContainer(items[0])) {
       items = items.slice(1)

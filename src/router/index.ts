@@ -19,5 +19,5 @@ export function initRouter(app: App<Element>): void {
   app.use(router)
 }
 
-// 主页路径，默认使用菜单第一个有效路径，配置后使用此路径
+// 由角色过滤后的菜单动态决定首页，保证不同角色登录后落到各自可访问的模块。
 export const HOME_PAGE_PATH = ''

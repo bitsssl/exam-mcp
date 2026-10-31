@@ -49,6 +49,22 @@
               />
             </ElFormItem>
 
+            <ElFormItem prop="phone">
+              <ElInput
+                class="custom-height"
+                v-model.trim="formData.phone"
+                placeholder="联系电话"
+              />
+            </ElFormItem>
+
+            <ElFormItem prop="email">
+              <ElInput
+                class="custom-height"
+                v-model.trim="formData.email"
+                placeholder="邮箱（选填）"
+              />
+            </ElFormItem>
+
             <ElFormItem prop="agreement">
               <ElCheckbox v-model="formData.agreement">
                 {{ $t('register.agreeText') }}
@@ -87,7 +103,8 @@
 
 <script setup lang="ts">
   import { useI18n } from 'vue-i18n'
-  import type { FormInstance, FormRules } from 'element-plus'
+  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { fetchRegister } from '@/api/auth'
 
   defineOptions({ name: 'Register' })
 
@@ -95,14 +112,14 @@
     username: string
     password: string
     confirmPassword: string
+    phone: string
+    email: string
     agreement: boolean
   }
 
   const USERNAME_MIN_LENGTH = 3
   const USERNAME_MAX_LENGTH = 20
   const PASSWORD_MIN_LENGTH = 6
-  const REDIRECT_DELAY = 1000
-
   const { t, locale } = useI18n()
   const router = useRouter()
   const formRef = ref<FormInstance>()
@@ -119,6 +136,8 @@
     username: '',
     password: '',
     confirmPassword: '',
+    phone: '',
+    email: '',
     agreement: false
   })
 
@@ -188,6 +207,7 @@
       { min: PASSWORD_MIN_LENGTH, message: t('register.rule.passwordLength'), trigger: 'blur' }
     ],
     confirmPassword: [{ required: true, validator: validateConfirmPassword, trigger: 'blur' }],
+    phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }],
     agreement: [{ validator: validateAgreement, trigger: 'change' }]
   }))
 
@@ -202,25 +222,17 @@
       await formRef.value.validate()
       loading.value = true
 
-      // TODO: 替换为真实 API 调用
-      // const params = {
-      //   username: formData.username,
-      //   password: formData.password
-      // }
-      // const res = await AuthService.register(params)
-      // if (res.code === ApiStatus.success) {
-      //   ElMessage.success('注册成功')
-      //   toLogin()
-      // }
-
-      // 模拟注册请求
-      setTimeout(() => {
-        loading.value = false
-        ElMessage.success('注册成功')
-        toLogin()
-      }, REDIRECT_DELAY)
+      await fetchRegister({
+        username: formData.username,
+        password: formData.password,
+        confirm_password: formData.confirmPassword,
+        phone: formData.phone,
+        email: formData.email || undefined
+      })
+      ElMessage.success('注册成功，请登录')
+      toLogin()
     } catch (error) {
-      console.error('表单验证失败:', error)
+      ElMessage.error(error instanceof Error ? error.message : '注册失败')
       loading.value = false
     }
   }
@@ -229,9 +241,7 @@
    * 跳转到登录页面
    */
   const toLogin = () => {
-    setTimeout(() => {
-      router.push({ name: 'Login' })
-    }, REDIRECT_DELAY)
+    router.push({ name: 'Login' })
   }
 </script>
 
