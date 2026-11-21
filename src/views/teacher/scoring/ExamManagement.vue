@@ -15,6 +15,14 @@
       </template>
 
       <div class="toolbar">
+        <el-input
+          v-model="searchKeyword"
+          clearable
+          placeholder="搜索考试名称"
+          :prefix-icon="Search"
+          @keyup.enter="fetchExams"
+          @clear="fetchExams"
+        />
         <el-select
           v-model="selectedSubjectId"
           filterable
@@ -30,14 +38,6 @@
             :value="subject.subject_id"
           />
         </el-select>
-        <el-input
-          v-model="searchKeyword"
-          clearable
-          placeholder="搜索考试名称"
-          :prefix-icon="Search"
-          @keyup.enter="fetchExams"
-          @clear="fetchExams"
-        />
       </div>
 
       <el-table v-loading="loading" :data="exams" row-key="id" empty-text="暂无考试">
@@ -51,8 +51,9 @@
         <el-table-column label="考试时间" min-width="180">
           <template #default="{ row }">{{ formatDateTime(row.exam_time) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="row.blank_paper_path" link type="primary" @click="viewBlankPaper(row)">查看空白试卷</el-button>
             <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
             <el-button link type="danger" @click="confirmDelete(row)">删除</el-button>
           </template>
@@ -62,7 +63,7 @@
       <el-empty v-if="!loading && exams.length === 0" description="暂无考试" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(760px, calc(100vw - 32px))" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
         <el-form-item label="所属科目" prop="subject_id">
           <el-select
@@ -92,6 +93,40 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="空白试卷" prop="blank_paper">
+          <el-upload
+            :auto-upload="false"
+            :limit="1"
+            :on-change="handleBlankPaperChange"
+            :show-file-list="false"
+          >
+            <el-button>选择空白试卷</el-button>
+            <template #tip><div class="el-upload__tip">先上传空白试卷，系统才能识别考试结构并生成阅卷标准。</div></template>
+          </el-upload>
+          <div v-if="blankPaperDisplayName" class="selected-blank-paper">
+            <el-icon><Document /></el-icon>
+            <span :title="blankPaperDisplayName">{{ blankPaperDisplayName }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="素材文件夹" prop="material_files">
+          <el-upload
+            :auto-upload="false"
+            :multiple="true"
+            :directory="true"
+            :show-file-list="false"
+            :on-change="handleMaterialFileChange"
+          >
+            <el-button>选择素材文件夹</el-button>
+            <template #tip>
+              <div class="el-upload__tip">用于后续题目的素材文件，当前仅保存上传内容，暂不参与考试解析。</div>
+            </template>
+          </el-upload>
+          <div v-if="materialFiles.length" class="selected-material-files">
+            <el-icon><FolderOpened /></el-icon>
+            <span>已选择 {{ materialFiles.length }} 个素材文件</span>
+            <el-button link type="danger" @click="clearMaterialFiles">清空</el-button>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -105,9 +140,9 @@
 
 <script setup lang="ts">
 import { computed, onActivated, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
+import { Document, FolderOpened, Plus, Search } from '@element-plus/icons-vue'
 import {
   createExam,
   deleteExam,
@@ -122,6 +157,7 @@ import {
 defineOptions({ name: 'TeacherExamManagement' })
 
 const route = useRoute()
+const router = useRouter()
 const subjects = ref<SubjectItem[]>([])
 const exams = ref<ExamItem[]>([])
 const selectedSubjectId = ref<number>()
@@ -133,11 +169,19 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 const editingExamId = ref<number>()
 const formRef = ref<FormInstance>()
-const form = reactive<{ subject_id?: number; exam_name: string; exam_time: string }>({
+const form = reactive<{
+  subject_id?: number
+  exam_name: string
+  exam_time: string
+}>({
   subject_id: undefined,
   exam_name: '',
   exam_time: ''
 })
+const blankPaperFile = ref<File>()
+const materialFiles = ref<File[]>([])
+const existingBlankPaperName = ref('')
+const blankPaperDisplayName = computed(() => blankPaperFile.value?.name || existingBlankPaperName.value)
 
 const subjectById = computed(() => new Map(subjects.value.map((subject) => [subject.subject_id, subject])))
 const dialogTitle = computed(() => (isEditing.value ? '编辑考试' : '新增考试'))
@@ -202,6 +246,9 @@ function openCreateDialog() {
   form.subject_id = selectedSubjectId.value
   form.exam_name = ''
   form.exam_time = ''
+  blankPaperFile.value = undefined
+  materialFiles.value = []
+  existingBlankPaperName.value = ''
   dialogVisible.value = true
 }
 
@@ -211,7 +258,27 @@ function openEditDialog(exam: ExamItem) {
   form.subject_id = exam.subject_id
   form.exam_name = exam.exam_name
   form.exam_time = normalizeDateTime(exam.exam_time)
+  blankPaperFile.value = undefined
+  materialFiles.value = []
+  existingBlankPaperName.value = exam.blank_paper_path?.split('/').pop() || ''
   dialogVisible.value = true
+}
+
+function handleBlankPaperChange(file: UploadFile) {
+  blankPaperFile.value = file.raw
+  if (file.raw) existingBlankPaperName.value = ''
+}
+
+function handleMaterialFileChange(file: UploadFile) {
+  if (!file.raw) return
+  const exists = materialFiles.value.some((item) => (
+    item.name === file.raw?.name && item.size === file.raw?.size && item.lastModified === file.raw?.lastModified
+  ))
+  if (!exists) materialFiles.value = [...materialFiles.value, file.raw]
+}
+
+function clearMaterialFiles() {
+  materialFiles.value = []
 }
 
 async function submitForm() {
@@ -219,7 +286,12 @@ async function submitForm() {
   try {
     await formRef.value.validate()
     submitting.value = true
-    const payload = { exam_name: form.exam_name.trim(), exam_time: form.exam_time || undefined }
+    const payload = {
+      exam_name: form.exam_name.trim(),
+      exam_time: form.exam_time || undefined,
+      blank_paper: blankPaperFile.value,
+      material_files: materialFiles.value
+    }
     const response = isEditing.value && editingExamId.value
       ? await updateExam(form.subject_id, editingExamId.value, payload)
       : await createExam(form.subject_id, payload)
@@ -233,6 +305,13 @@ async function submitForm() {
   } finally {
     submitting.value = false
   }
+}
+
+function viewBlankPaper(exam: ExamItem) {
+  router.push({
+    name: 'answer-upload-structure',
+    params: { subjectId: exam.subject_id, examId: exam.id }
+  })
 }
 
 async function confirmDelete(exam: ExamItem) {
@@ -280,6 +359,11 @@ function errorMessage(error: unknown, fallback: string) {
 .exam-management-page :deep(.el-input__inner),
 .exam-management-page :deep(.el-select__placeholder),
 .exam-management-page :deep(.el-button) { font-size: 14px; }
+.selected-blank-paper { display: flex; align-items: flex-start; gap: 6px; width: 100%; margin-top: 8px; color: var(--el-text-color-regular); line-height: 1.6; }
+.selected-blank-paper .el-icon { flex: 0 0 auto; margin-top: 3px; color: var(--el-color-primary); }
+.selected-blank-paper span { min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+.selected-material-files { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--el-text-color-regular); }
+.selected-material-files .el-icon { color: var(--el-color-primary); }
 @media (max-width: 640px) {
   .page-header, .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar .el-select, .toolbar .el-input { width: 100%; max-width: none; }

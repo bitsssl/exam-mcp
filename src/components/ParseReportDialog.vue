@@ -28,10 +28,7 @@
       <template v-else-if="report">
         <!-- 概览 -->
         <div class="stat-grid">
-          <div class="stat-item">
-            <div class="stat-value">{{ reportData.summary.candidateCount }}</div>
-            <div class="stat-label">识别考生</div>
-          </div>
+          <MetricStatCard label="识别考生" :value="reportData.summary.candidateCount" :icon="User" />
           <!-- 空白考生统计卡按需求隐藏，保留代码便于后续恢复展示 -->
           <div
             v-if="false"
@@ -41,14 +38,8 @@
             <div class="stat-value">{{ reportData.summary.blankCandidateCount }}</div>
             <div class="stat-label">空白考生</div>
           </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ reportData.summary.questionCount }}</div>
-            <div class="stat-label">题目数</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ structureSourceText }}</div>
-            <div class="stat-label">题目结构来源</div>
-          </div>
+          <MetricStatCard label="题目数" :value="reportData.summary.questionCount" :icon="Collection" tone="success" />
+          <MetricStatCard label="题目结构来源" :value="structureSourceText" :icon="FolderOpened" tone="info" />
         </div>
 
         <!-- 文件定位 -->
@@ -143,7 +134,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { Collection, FolderOpened, User } from '@element-plus/icons-vue';
 import type { ParseReportData, StructurePreviewResult } from '@/api/teacher-scoring';
+import MetricStatCard from './MetricStatCard.vue';
 
 defineOptions({ name: 'ParseReportDialog' });
 
@@ -188,7 +181,9 @@ const structureSourceTextMap: Record<string, string> = {
   answer_key: '答案卷',
   blank_paper: '空白试卷',
   grading_standard_table: '评分标准表',
-  student_documents: '考生文档反推'
+  student_documents: '考生文档反推',
+  // 上传/抽取请求携带阅卷标准结构快照时，后端以此标识结构来源
+  paper_structure: '阅卷标准快照'
 };
 
 const structureSourceText = computed(() => {
@@ -211,33 +206,9 @@ const structureSourceText = computed(() => {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 16px;
-}
-
-.stat-item {
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  text-align: center;
-  background: #f9fafb;
-}
-
-.stat-value {
-  font-size: 22px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.stat-warn .stat-value {
-  color: #e6a23c;
-}
-
-.stat-label {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #6b7280;
 }
 
 .ignored-list {

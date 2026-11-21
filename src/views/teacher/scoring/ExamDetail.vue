@@ -7,15 +7,6 @@
       </div>
       <div class="header-actions">
         <el-button class="back-button" @click="goBack">返回</el-button>
-        <el-input
-          v-model="searchKeyword"
-          class="exam-search"
-          clearable
-          placeholder="搜索试卷包"
-          :prefix-icon="Search"
-          @clear="fetchPackages"
-          @keyup.enter="fetchPackages"
-        />
       </div>
     </header>
 
@@ -67,6 +58,15 @@
         </el-button>
       </div>
 
+      <el-input
+        v-model="searchKeyword"
+        class="exam-search"
+        clearable
+        placeholder="搜索试卷包"
+        :prefix-icon="Search"
+        @clear="fetchPackages"
+        @keyup.enter="fetchPackages"
+      />
       <div v-loading="loading" class="package-grid">
         <div
           v-for="item in packages"
@@ -135,20 +135,6 @@
               </div>
             </div>
           </el-form-item>
-          <el-form-item label="空白试卷" prop="blank_paper">
-            <div class="blank-paper-picker">
-              <el-upload
-                :auto-upload="false"
-                :limit="1"
-                :file-list="blankPaperFiles"
-                :on-change="handleBlankPaperChange"
-                :on-remove="handleBlankPaperRemove"
-              >
-                <el-button>选择文件</el-button>
-              </el-upload>
-              <span class="blank-paper-tip">若试卷包中没有作答试卷文件，请在此上传空试卷模板文件</span>
-            </div>
-          </el-form-item>
         </el-form>
         <template #footer>
           <div class="dialog-footer">
@@ -159,14 +145,6 @@
           </div>
         </template>
       </el-dialog>
-
-      <ParseReportDialog
-        v-model="reportDialogVisible"
-        title="试卷包解析报告"
-        :loading="reportDialogLoading"
-        :report="reportDialogData"
-        :structure="reportStructureData"
-      />
 
       <el-dialog
         v-model="scoringDialogVisible"
@@ -202,7 +180,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox, FormInstance, FormRules, UploadFile, UploadUserFile } from 'element-plus';
+import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus';
 import { Plus, Search } from '@element-plus/icons-vue';
 import {
   deleteLocalPackageHistory,
@@ -211,14 +189,10 @@ import {
   getGradingTemplates,
   getLatestGradingStandard,
   getLocalPackage as getLocalPackageRegistration,
-  getLocalPackageStructure,
   getPackages,
   type ExamItem,
   type ExamPackageItem,
-  type ParseReportData,
-  type StructurePreviewResult
 } from '@/api/teacher-scoring';
-import ParseReportDialog from '@/components/ParseReportDialog.vue';
 import {
   createLocalPackageFromFolder,
   listLocalPackages,
@@ -244,12 +218,6 @@ const packageFormRef = ref<FormInstance>();
 const folderInputRef = ref<HTMLInputElement>();
 const selectedFolderFiles = ref<File[]>([]);
 const selectedFolderPaths = ref<string[]>([]);
-const blankPaperFiles = ref<UploadUserFile[]>([]);
-const blankPaperFile = ref<File>();
-const reportDialogVisible = ref(false);
-const reportDialogLoading = ref(false);
-const reportDialogData = ref<ParseReportData | null>(null);
-const reportStructureData = ref<StructurePreviewResult | null>(null);
 const hasGradingStandard = ref(false);
 const hasGradingTemplate = ref(false);
 const gradingTemplates = ref<any[]>([]);
@@ -266,7 +234,6 @@ const examTitle = computed(() => exam.value ? `${exam.value.exam_name} - 考试�
 const packageForm = reactive({
   package_name: '',
   package_file: '',
-  blank_paper: ''
 });
 
 const packageRules: FormRules = {
@@ -315,30 +282,14 @@ onMounted(async () => {
 const resetForm = () => {
   packageForm.package_name = '';
   packageForm.package_file = '';
-  packageForm.blank_paper = '';
   selectedFolderFiles.value = [];
   selectedFolderPaths.value = [];
-  blankPaperFiles.value = [];
-  blankPaperFile.value = undefined;
   if (folderInputRef.value) {
     folderInputRef.value.value = '';
   }
   packageFormRef.value?.clearValidate();
 };
 
-const handleBlankPaperChange = (file: UploadFile) => {
-  blankPaperFiles.value = file ? [file] : [];
-  blankPaperFile.value = file.raw;
-  packageForm.blank_paper = file.raw ? 'selected' : '';
-  packageFormRef.value?.validateField('blank_paper');
-};
-
-const handleBlankPaperRemove = () => {
-  blankPaperFiles.value = [];
-  blankPaperFile.value = undefined;
-  packageForm.blank_paper = '';
-  packageFormRef.value?.validateField('blank_paper');
-};
 
 const openCreateDialog = () => {
   resetForm();
@@ -377,7 +328,7 @@ const openScoringEntry = (mode?: 'trial' | 'formal') => {
 };
 
 const selectScoringPackage = (pkg: ExamPackageItem | LocalPackageSummary) => {
-  // 试阅/评阅统一进入试卷包详情页（展示每个考生作答的页面），在页面内执行试阅/评阅
+  // 试阅和正式评阅都从原试卷包详情页进入，在原页面内完成选择与评分。
   router.push({
     name: 'teacher-package-detail',
     params: { subjectId: subjectId.value, examId: examId.value, packageId: String(pkg.package_id) },
@@ -601,23 +552,10 @@ const handleFolderChange = async (event: Event) => {
 // 上传成功后自动打开解析报告：空文件夹考生学号在报告里列出，供人工复核
 const openReportDialog = async (localPackageId?: number) => {
   if (!localPackageId) return;
-  reportDialogVisible.value = true;
-  reportDialogLoading.value = true;
-  reportDialogData.value = null;
-  reportStructureData.value = null;
-  try {
-    const response = await getLocalPackageStructure(subjectId.value, examId.value, localPackageId);
-    if (response.code === 0 || response.code === 200) {
-      reportStructureData.value = response.data;
-      reportDialogData.value = response.data?.parse_report || null;
-    } else {
-      ElMessage.error(response.message || '获取解析报告失败');
-    }
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '获取解析报告失败');
-  } finally {
-    reportDialogLoading.value = false;
-  }
+  router.push({
+    name: 'answer-parse-report',
+    params: { subjectId: subjectId.value, examId: examId.value, packageId: `local_${localPackageId}` }
+  });
 };
 
 const submitPackage = async () => {
@@ -637,9 +575,7 @@ const submitPackage = async () => {
       packageForm.package_name,
       selectedFolderFiles.value,
       selectedFolderPaths.value,
-      {
-        blankPaper: blankPaperFile.value
-      }
+      {}
     );
     if (localPackage.matched_history) {
       ElMessage.success('已匹配历史试卷包，历史评分结果可恢复');
@@ -738,6 +674,7 @@ const formatDateTime = (value?: string) => {
 
 .exam-search {
   width: 260px;
+  margin-bottom: 18px;
 }
 
 .exam-search :deep(.el-input__wrapper) {
@@ -889,19 +826,6 @@ const formatDateTime = (value?: string) => {
 }
 
 .upload-tip {
-  color: #909399;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.blank-paper-picker {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-
-.blank-paper-tip {
   color: #909399;
   font-size: 12px;
   line-height: 1.6;

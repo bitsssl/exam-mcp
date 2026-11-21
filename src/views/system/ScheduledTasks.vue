@@ -295,13 +295,14 @@ onMounted(() => {
 }
 
 .stat-card {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 4px solid var(--el-color-primary);
+  border-radius: 8px;
+  padding: 12px 18px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   transition: all 0.2s ease;
 }
 
@@ -310,11 +311,15 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
 }
 
+.stat-card:has(.stat-icon.warning) { border-left-color: var(--el-color-warning); }
+.stat-card:has(.stat-icon.info) { border-left-color: var(--el-color-info); }
+
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  background: #f0f9ff;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  background: var(--el-color-primary-light-9);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -323,29 +328,36 @@ onMounted(() => {
 }
 
 .stat-icon.warning {
-  background: #fef3c7;
-  color: #f59e0b;
+  border-left-color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
 
 .stat-icon.info {
-  background: #f0f4ff;
-  color: #6366f1;
+  background: var(--el-color-info-light-9);
+  color: var(--el-color-info);
 }
 
 .stat-content {
   flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 700;
   color: #1a1a1a;
-  margin-bottom: 4px;
+  margin-bottom: 0;
+  order: 2;
 }
 
 .stat-label {
-  color: #6b7280;
-  font-size: 14px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  order: 1;
 }
 
 /* 响应式设计 */
@@ -368,4 +380,4 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
-</style> 
+</style>

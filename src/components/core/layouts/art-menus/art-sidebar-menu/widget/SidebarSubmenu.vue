@@ -1,6 +1,11 @@
 <template>
   <template v-for="(item, index) in filteredMenuItems" :key="getUniqueKey(item, index)">
-    <ElSubMenu v-if="hasChildren(item)" :index="item.path || item.meta.title" :level="level">
+    <ElSubMenu
+      v-if="hasChildren(item)"
+      :index="item.path || item.meta.title"
+      :level="level"
+      :class="{ 'grading-workbench-menu': isGradingWorkbench || isScoringWorkbenchRoot(item) }"
+    >
       <template #title>
         <div class="menu-icon flex-cc">
           <ArtSvgIcon
@@ -9,7 +14,10 @@
             :style="{ color: theme.iconColor }"
           />
         </div>
-        <span class="menu-name">
+        <span
+          class="menu-name"
+          :class="{ 'grading-workbench-menu-name': isGradingWorkbench || isScoringWorkbenchRoot(item) }"
+        >
           {{ formatMenuTitle(item.meta.title) }}
         </span>
         <div v-if="item.meta.showBadge" class="art-badge" style="right: 10px" />
@@ -20,6 +28,7 @@
         :is-mobile="isMobile"
         :level="level + 1"
         :theme="theme"
+        :is-grading-workbench="isGradingWorkbench || isScoringWorkbenchRoot(item)"
         @close="closeMenu"
       />
     </ElSubMenu>
@@ -28,6 +37,7 @@
       v-else
       :index="isExternalLink(item) ? undefined : item.path || item.meta.title"
       :level-item="level + 1"
+      :class="{ 'grading-workbench-menu': isGradingWorkbench || isScoringWorkbenchRoot(item) }"
       @click="goPage(item)"
     >
       <div class="menu-icon flex-cc">
@@ -44,7 +54,10 @@
       />
 
       <template #title>
-        <span class="menu-name">
+        <span
+          class="menu-name"
+          :class="{ 'grading-workbench-menu-name': isGradingWorkbench || isScoringWorkbenchRoot(item) }"
+        >
           {{ formatMenuTitle(item.meta.title) }}
         </span>
         <div v-if="item.meta.showBadge" class="art-badge" />
@@ -78,6 +91,8 @@
     isMobile?: boolean
     /** 菜单层级 */
     level?: number
+    /** 当前菜单是否位于评分工作台下 */
+    isGradingWorkbench?: boolean
   }
 
   interface Emits {
@@ -90,7 +105,8 @@
     list: () => [],
     theme: () => ({}),
     isMobile: false,
-    level: 0
+    level: 0,
+    isGradingWorkbench: false
   })
 
   const emit = defineEmits<Emits>()
@@ -98,6 +114,19 @@
   const settingStore = useSettingStore()
 
   const { menuOpen } = storeToRefs(settingStore)
+  const isGradingWorkbench = computed(() => props.isGradingWorkbench)
+
+  /** 评分工作台在侧边栏中的一级入口。 */
+  const scoringWorkbenchRootNames = new Set([
+    'SubjectAndExamManagement',
+    'GradingStandardsManagement',
+    'AnswerManagement',
+    'GradingManagement'
+  ])
+
+  const isScoringWorkbenchRoot = (item: AppRouteRecord): boolean => {
+    return scoringWorkbenchRootNames.has(String(item.name || ''))
+  }
 
   /**
    * 过滤后的菜单项列表

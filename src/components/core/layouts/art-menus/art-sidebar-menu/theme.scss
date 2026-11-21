@@ -117,6 +117,18 @@ $popup-menu-radius: 6px;
     font-size: $menu-icon-size;
   }
 
+  // 评分工作台下的菜单项沿用阅卷管理子菜单的加粗效果，便于快速识别。
+  .grading-workbench-menu,
+  .grading-workbench-menu-name {
+    font-weight: 700 !important;
+
+    .menu-name,
+    .el-sub-menu__title,
+    .el-menu-item {
+      font-weight: 700 !important;
+    }
+  }
+
   // 菜单高度
   .el-sub-menu__title,
   .el-menu-item {

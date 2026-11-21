@@ -68,8 +68,10 @@ api.interceptors.response.use(
         // 处理401未授权错误
         if (error.response && error.response.status === 401 && useUserStore().accessToken) {
             console.warn('收到401未授权错误');
-            
+
             ElMessage.error('会话已过期，请重新登录');
+            // 清除过期令牌并跳转登录页；路由初始化阶段的守卫也会
+            // 显式结束当前导航，避免旧令牌让页面停在初始化状态。
             useUserStore().logOut();
         }
         return Promise.reject(error);

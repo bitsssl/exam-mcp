@@ -119,20 +119,20 @@
                     <el-row :gutter="20">
                         <el-col :span="8">
                             <div class="stat-card">
-                                <div class="stat-value">{{ statisticsData.total_calls || 0 }}</div>
-                                <div class="stat-label">总调用次数</div>
+                                <div class="stat-icon"><el-icon><DataAnalysis /></el-icon></div>
+                                <div class="stat-content"><div class="stat-value">{{ statisticsData.total_calls || 0 }}</div><div class="stat-label">总调用次数</div></div>
                             </div>
                         </el-col>
                         <el-col :span="8">
                             <div class="stat-card">
-                                <div class="stat-value">{{ statisticsData.success_calls || 0 }}</div>
-                                <div class="stat-label">成功调用</div>
+                                <div class="stat-icon success"><el-icon><CircleCheck /></el-icon></div>
+                                <div class="stat-content"><div class="stat-value">{{ statisticsData.success_calls || 0 }}</div><div class="stat-label">成功调用</div></div>
                             </div>
                         </el-col>
                         <el-col :span="8">
                             <div class="stat-card">
-                                <div class="stat-value">{{ statisticsData.error_calls || 0 }}</div>
-                                <div class="stat-label">失败调用</div>
+                                <div class="stat-icon warning"><el-icon><CircleClose /></el-icon></div>
+                                <div class="stat-content"><div class="stat-value">{{ statisticsData.error_calls || 0 }}</div><div class="stat-label">失败调用</div></div>
                             </div>
                         </el-col>
                     </el-row>
@@ -149,6 +149,7 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { CircleCheck, CircleClose, DataAnalysis } from '@element-plus/icons-vue'
 import { mcpAuthApi } from '@/api/mcp-auth'
 import { copyTextToClipboard } from '@/utils/copy'
 
@@ -403,22 +404,44 @@ const handleExpiresDaysChange = (value) => {
 }
 
 .stat-card {
-    text-align: center;
-    padding: 20px;
-    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 76px;
+    padding: 12px 18px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-left: 4px solid var(--el-color-primary);
     border-radius: 8px;
+    background: var(--el-fill-color-blank);
 }
 
+.stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    font-size: 20px;
+}
+
+.stat-icon.success { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.stat-icon.warning { color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.stat-content { display: flex; align-items: baseline; justify-content: space-between; flex: 1; gap: 12px; }
 .stat-value {
-    font-size: 24px;
+    order: 2;
+    font-size: 26px;
     font-weight: bold;
-    color: #409eff;
+    color: var(--el-text-color-primary);
 }
 
 .stat-label {
+    order: 1;
     font-size: 14px;
-    color: #666;
-    margin-top: 5px;
+    color: var(--el-text-color-secondary);
 }
 
 .statistics-chart {

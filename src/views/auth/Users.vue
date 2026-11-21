@@ -127,9 +127,10 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="280" fixed="right" align="center">
+          <el-table-column label="操作" width="360" fixed="right" align="center">
             <template #default="scope">
               <div class="action-buttons">
+                <el-button v-if="!scope.row.is_admin" size="small" type="success" link @click="openSubjectAssignments(scope.row)">科目权限</el-button>
                 <el-button size="small" type="primary" @click="handleEditUser(scope.row)"
                   :disabled="scope.row.username === 'admin' && currentUser.username !== 'admin'"
                   class="action-btn-small edit-btn" link>
@@ -205,6 +206,17 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="subjectAssignmentVisible" title="分配可访问科目" width="560px" destroy-on-close>
+      <p class="assignment-hint">教师只能看到已分配的科目及其考试、答卷和阅卷数据；管理员始终可查看全部业务数据。</p>
+      <el-select v-model="assignedSubjectIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择该教师可访问的科目" style="width: 100%" :loading="subjectsLoading">
+        <el-option v-for="subject in availableSubjects" :key="subject.subject_id" :label="`${subject.subject_no} · ${subject.subject_name}`" :value="subject.subject_id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="subjectAssignmentVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignmentLoading" @click="saveSubjectAssignments">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 导入用户对话框 -->
     <el-dialog v-model="importDialogVisible" title="导入用户" width="500px" class="modern-dialog">
       <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-width="100px" class="modern-form">
@@ -267,6 +279,7 @@ import {
   getAllTenants,
   importPlatformUser
 } from '@/api/platform-auth';
+import { getSubjects, getTeacherSubjectAssignments, updateTeacherSubjectAssignments, type SubjectItem } from '@/api/teacher-scoring';
 
 // 状态
 const loading = ref(false);
@@ -275,6 +288,12 @@ const tenants = ref<any[]>([]);
 const dialogVisible = ref(false);
 const importDialogVisible = ref(false);
 const passwordDialogVisible = ref(false);
+const subjectAssignmentVisible = ref(false);
+const subjectsLoading = ref(false);
+const assignmentLoading = ref(false);
+const availableSubjects = ref<SubjectItem[]>([]);
+const assignedSubjectIds = ref<number[]>([]);
+const assignedTeacher = ref<any>(null);
 const isEdit = ref(false);
 const saveLoading = ref(false);
 const importLoading = ref(false);
@@ -446,6 +465,35 @@ const handleChangePassword = (row: any) => {
   passwordForm.username = row.username;
   passwordForm.password = '';
   passwordDialogVisible.value = true;
+};
+
+const openSubjectAssignments = async (row: any) => {
+  assignedTeacher.value = row;
+  subjectAssignmentVisible.value = true;
+  subjectsLoading.value = true;
+  try {
+    const [subjectsResponse, assignmentResponse] = await Promise.all([
+      getSubjects(),
+      getTeacherSubjectAssignments(row.id)
+    ]);
+    availableSubjects.value = subjectsResponse.data || [];
+    assignedSubjectIds.value = assignmentResponse.data || [];
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '读取科目权限失败');
+  } finally { subjectsLoading.value = false; }
+};
+
+const saveSubjectAssignments = async () => {
+  if (!assignedTeacher.value) return;
+  assignmentLoading.value = true;
+  try {
+    const response = await updateTeacherSubjectAssignments(assignedTeacher.value.id, assignedSubjectIds.value);
+    if (response.code !== 0 && response.code !== 200) throw new Error(response.message || '保存科目权限失败');
+    ElMessage.success('科目权限已保存');
+    subjectAssignmentVisible.value = false;
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || '保存科目权限失败');
+  } finally { assignmentLoading.value = false; }
 };
 
 // 删除用户

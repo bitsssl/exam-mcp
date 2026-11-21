@@ -85,12 +85,20 @@
 
     const resultRouteNames: Record<string, { path: string; title: string }> = {
       'teacher-package-trial-results': {
-        path: '/grading/trial-results',
-        title: '查看试阅结果'
+        path: '/grading/trial',
+        title: '试阅'
       },
       'teacher-package-formal-results': {
-        path: '/grading/formal-results',
-        title: '查看正式评阅结果'
+        path: '/grading/results',
+        title: '查看评阅结果'
+      },
+      'teacher-package-formal-student-detail': {
+        path: '/grading/results',
+        title: '查看评阅结果'
+      },
+      'teacher-package-formal-completion': {
+        path: '/grading/results',
+        title: '查看评阅结果'
       }
     }
     const resultRoute = resultRouteNames[String(currentRoute.name || '')]
@@ -98,7 +106,12 @@
       items = [
         { path: '/grading', meta: { title: '阅卷管理' } },
         { path: resultRoute.path, meta: { title: resultRoute.title } },
-        { path: currentRoute.path, meta: { ...currentRoute.meta, title: '结果详情' } }
+        { path: currentRoute.path, meta: {
+          ...currentRoute.meta,
+          title: currentRoute.name === 'teacher-package-formal-student-detail'
+            ? '考生评阅详情'
+            : currentRoute.name === 'teacher-package-formal-completion' ? '评阅完成报告' : '结果详情'
+        } }
       ]
     }
 

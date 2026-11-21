@@ -296,14 +296,16 @@ const formatNumber = (num) => {
 }
 
 .stats-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 16px;
-  padding: 20px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 4px solid var(--el-color-primary);
+  border-radius: 8px;
+  padding: 12px 18px;
   position: relative;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
-  color: white;
+  color: var(--el-text-color-primary);
 }
 
 .stats-card:hover {
@@ -315,7 +317,7 @@ const formatNumber = (num) => {
   display: flex !important;
   flex-direction: row !important;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   position: relative;
   z-index: 2;
 }
@@ -324,69 +326,80 @@ const formatNumber = (num) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.2);
-  font-size: 24px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 20px;
 }
 
 .card-info {
   flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .card-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: 0;
+  order: 2;
 }
 
 .card-label {
   font-size: 14px;
-  opacity: 0.9;
+  color: var(--el-text-color-secondary);
   font-weight: 500;
+  order: 1;
 }
 
 .card-today {
+  flex-basis: 100%;
+  order: 3;
   font-size: 12px;
-  opacity: 0.8;
+  color: var(--el-text-color-secondary);
   margin-top: 4px;
 }
 
 /* 服务状态卡片 */
 .stats-card.total {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-left-color: var(--el-color-primary);
 }
 
 .stats-card.running {
-  background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+  border-left-color: var(--el-color-success);
 }
 
 .stats-card.stopped {
-  background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
+  border-left-color: var(--el-color-info);
 }
 
 .stats-card.error {
-  background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+  border-left-color: var(--el-color-danger);
 }
 
 /* 模板卡片 */
 .stats-card.template-groups {
-  background: linear-gradient(135deg, #03a9f4 0%, #0288d1 100%);
+  border-left-color: var(--el-color-primary);
 }
 
 .stats-card.templates {
-  background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+  border-left-color: var(--el-color-success);
 }
 
 /* 调用卡片 */
 .stats-card.service-calls {
-  background: linear-gradient(135deg, #3f51b5 0%, #303f9f 100%);
+  border-left-color: var(--el-color-primary);
 }
 
 .stats-card.tools-calls {
-  background: linear-gradient(135deg, #673ab7 0%, #512da8 100%);
+  border-left-color: var(--el-color-info);
 }
 
 /* 响应式设计 */
@@ -406,4 +419,4 @@ const formatNumber = (num) => {
     padding: 16px;
   }
 }
-</style> 
+</style>

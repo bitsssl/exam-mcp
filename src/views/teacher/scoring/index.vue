@@ -299,7 +299,7 @@ const formatDate = (value: string) => {
 .toolbar-row {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 16px;
   margin-bottom: 20px;
 }

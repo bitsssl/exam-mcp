@@ -15,11 +15,6 @@
       </template>
 
       <div class="toolbar-row">
-        <el-button type="primary" class="add-exam-btn" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          新增考试
-        </el-button>
-
         <el-input
           v-model="searchKeyword"
           class="exam-search"
@@ -29,6 +24,10 @@
           @clear="fetchExams"
           @keyup.enter="fetchExams"
         />
+        <el-button type="primary" class="add-exam-btn" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          新增考试
+        </el-button>
       </div>
 
       <div v-loading="loading" class="exam-grid">
@@ -572,7 +571,6 @@ const normalizeDateTime = (value?: string) => {
 
 .exam-search {
   width: 180px;
-  margin-left: auto;
 }
 
 .exam-search :deep(.el-input__wrapper) {

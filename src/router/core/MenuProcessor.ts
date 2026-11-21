@@ -8,12 +8,49 @@
  */
 
 import type { AppRouteRecord } from '@/types/router'
+import type { Router, RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
+import { useMenuStore } from '@/store/modules/menu'
 import { useAppMode } from '@/hooks/core/useAppMode'
 import { fetchGetMenuList } from '@/api/system-manage'
+import { getGradingTasks } from '@/api/teacher-scoring'
 import { asyncRoutes } from '../routes/asyncRoutes'
 import { RoutesAlias } from '../routesAlias'
 import { formatMenuTitle } from '@/utils'
+import { ComponentLoader } from './ComponentLoader'
+import { RouteTransformer } from './RouteTransformer'
+
+const gradingResultRouteTransformer = new RouteTransformer(new ComponentLoader())
+
+/**
+ * 在菜单树中按 name 查找菜单项
+ */
+const findMenuByNameInList = (menuList: AppRouteRecord[], name: string): AppRouteRecord | null => {
+  for (const item of menuList) {
+    if (String(item.name || '') === name) return item
+    if (item.children?.length) {
+      const found = findMenuByNameInList(item.children, name)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * 会话中途刷新「查看评阅结果」的按任务子菜单（新增/删除阅卷任务后调用）。
+ * 重新拉取任务清单并更新菜单 store，同时向路由注册新增的任务子路由
+ * （已注册的跳过）；被删除任务的路由随其父级在登出时统一清理。
+ */
+export async function refreshGradingTaskSubMenus(router: Router): Promise<void> {
+  const menuList = await new MenuProcessor().getMenuList()
+  useMenuStore().setMenuList(menuList)
+  const parent = findMenuByNameInList(menuList, 'GradingResults')
+  for (const child of parent?.children || []) {
+    if (child.name && !router.hasRoute(child.name)) {
+      router.addRoute('GradingManagement', gradingResultRouteTransformer.transform(child, 1) as RouteRecordRaw)
+    }
+  }
+}
 
 export class MenuProcessor {
   /**
@@ -29,11 +66,85 @@ export class MenuProcessor {
       menuList = await this.processBackendMenu()
     }
 
+    // 按阅卷任务动态注入「查看评阅结果」子菜单（一个任务一个子菜单）
+    await this.attachGradingTaskSubMenus(menuList)
+
     // 在规范化路径之前，验证原始路径配置
     this.validateMenuPaths(menuList)
 
     // 规范化路径（将相对路径转换为完整路径）
     return this.normalizeMenuPaths(menuList)
+  }
+
+  /**
+   * 给「查看评阅结果」(GradingResults) 注入按阅卷任务的子菜单。
+   *
+   * 每个任务一个子菜单，点击进入该任务的正式评阅结果页
+   * （FormalGradingResultsPage 通过 route props 接收任务绑定的
+   * subject/exam/package/standard）。任务接口失败或没有任务时，
+   * 注入兜底子菜单沿用旧的「最新任务」中间页，保证菜单可点击。
+   */
+  private async attachGradingTaskSubMenus(menuList: AppRouteRecord[]): Promise<void> {
+    const parent = findMenuByNameInList(menuList, 'GradingResults')
+    if (!parent) return
+    const roles = parent.meta?.roles
+
+    let tasks: any[] = []
+    try {
+      const response = await getGradingTasks()
+      if ([0, 200].includes(response?.code)) {
+        tasks = Array.isArray(response.data) ? response.data : []
+      }
+    } catch (error) {
+      console.warn('[MenuProcessor] 获取阅卷任务失败，查看评阅结果子菜单降级:', error)
+    }
+
+    const sorted = [...tasks].sort((left, right) =>
+      String(right.created_at || '').localeCompare(String(left.created_at || ''))
+    )
+    parent.children = sorted.map((task) => ({
+      path: `results/task-${task.task_id}`,
+      name: `GradingResultsTask${task.task_id}`,
+      component: '/teacher/scoring/FormalGradingResultsPage',
+      props: {
+        subjectId: String(task.subject_id ?? ''),
+        examId: String(task.exam_id ?? ''),
+        packageId: String(task.local_package_id ?? ''),
+        standardId: task.standard_id ? String(task.standard_id) : undefined
+      },
+      meta: {
+        title: this.buildGradingTaskMenuTitle(task, sorted),
+        icon: 'ri:bar-chart-box-line',
+        roles,
+        keepAlive: true
+      }
+    }))
+
+    if (!parent.children.length) {
+      parent.children = [{
+        path: 'results/latest',
+        name: 'GradingResultsLatest',
+        component: '/teacher/scoring/GradingResultsPage',
+        meta: {
+          title: '查看评阅结果',
+          icon: 'ri:bar-chart-box-line',
+          roles,
+          isHideTab: true,
+          keepAlive: true
+        }
+      }]
+    }
+  }
+
+  /**
+   * 任务子菜单标题：考试名（同名任务追加任务号区分）
+   */
+  private buildGradingTaskMenuTitle(task: any, allTasks: any[]): string {
+    const base = String(task.exam_name || task.package_name || '').trim() || `任务${task.task_id}`
+    const sameBaseCount = allTasks.filter(
+      (item) => String(item.exam_name || item.package_name || '').trim() === base
+    ).length
+    return sameBaseCount > 1 ? `${base}（任务${task.task_id}）` : base
   }
 
   /**

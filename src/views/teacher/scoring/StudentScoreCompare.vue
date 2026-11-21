@@ -254,7 +254,8 @@ const loadPage = async () => {
     const response = await getLocalGradingRecords(
       String(route.params.subjectId),
       String(route.params.examId),
-      localPackageId
+      localPackageId,
+      { include_raw: false, standard_id: route.query.standardId as string | undefined }
     );
     if (response.code === 0 || response.code === 200) {
       gradingRecords.value = response.data || [];

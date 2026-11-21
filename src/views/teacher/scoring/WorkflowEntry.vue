@@ -72,7 +72,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getExams, getSubjects, type ExamItem, type SubjectItem } from '@/api/teacher-scoring'
 
-type WorkflowModule = 'answers' | 'standards' | 'templates' | 'grading'
+type WorkflowModule = 'answers' | 'standards' | 'templates' | 'grading' | 'grading-trial' | 'grading-formal'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,6 +104,20 @@ const moduleCopy: Record<WorkflowModule, { title: string; description: string; a
     description: '从考试进入试卷包，执行试阅、正式阅卷、结果对比和人工复核。',
     action: '阅卷工作台',
     hint: '阅卷前先准备评分标准和模板；正式结果支持统计、异常查看与人工复核。',
+    destination: (subject, exam) => `/teacher/scoring/subjects/${subject}/exams/${exam}`
+  },
+  'grading-trial': {
+    title: '试阅',
+    description: '创建并进入试阅任务，先检查评分标准和阅卷效果。',
+    action: '试阅工作台',
+    hint: '试阅任务使用已上传并解析的试卷包，用于检查评分标准和阅卷效果。',
+    destination: (subject, exam) => `/teacher/scoring/subjects/${subject}/exams/${exam}`
+  },
+  'grading-formal': {
+    title: '评阅',
+    description: '创建并进入正式评阅任务，处理试卷包中的考生答卷。',
+    action: '评阅工作台',
+    hint: '正式评阅任务使用已上传并解析的试卷包，结果可在查看评阅结果中查看。',
     destination: (subject, exam) => `/teacher/scoring/subjects/${subject}/exams/${exam}`
   }
 }

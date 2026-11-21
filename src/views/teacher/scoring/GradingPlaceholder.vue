@@ -5,7 +5,7 @@
         <el-icon v-if="autoRunning" class="is-loading auto-grading-icon"><Loading /></el-icon>
         <el-icon v-else class="auto-grading-icon auto-grading-done"><CircleCheck /></el-icon>
         <div class="auto-grading-title">{{ autoFinished ? '评分完成，正在返回…' : (isTrialMode ? '正在自动执行试阅…' : '正在自动执行评阅…') }}</div>
-        <div class="auto-grading-desc">按已保存的阅卷模板与评分标准执行，请稍候，不要关闭页面</div>
+        <div class="auto-grading-desc">按每道题已保存的阅卷标准执行，请稍候，不要关闭页面</div>
       </div>
     </div>
     <el-card>
@@ -57,7 +57,7 @@
               </label>
             </div>
             <div class="batch-standard-heading">
-              <span>{{ isPaperMode ? '阅卷模板' : '评阅标准' }}</span>
+              <span>评阅标准</span>
               <span class="batch-standard-count">（{{ trialPlanSummaryText }}）</span>
             </div>
             <div class="batch-standard-list">
@@ -114,30 +114,16 @@
                         {{ studentNo }}
                       </el-tag>
                     </div>
-                    <span>模板题目：{{ selectedTemplate?.template_items?.length || 0 }} 道题</span>
-                    <span>MCP：按模板中每道题标准内 MCP 自动分配</span>
+                    <span>题目：{{ paperQuestionNos.length }} 道题</span>
+                    <span>MCP：按每道题阅卷标准内 MCP 自动分配</span>
                   </div>
                 </div>
-                <el-select
-                  v-model="selectedTemplateId"
-                  class="batch-standard-select"
-                  placeholder="选择阅卷模板"
-                  filterable
-                >
-                  <el-option-group label="整卷阅卷模板">
-                    <el-option
-                      v-for="option in templateOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-option-group>
-                </el-select>
+                <el-tag type="info" effect="plain">按每道题最新阅卷标准</el-tag>
               </div>
             </div>
             <div class="trial-standard-preview">
               <div class="preview-title">评分依据预览</div>
-              <pre>{{ isPaperMode ? getTemplateCriteriaSummary() || '请选择阅卷模板' : getTrialStandardText(currentQuestionNo) || '请选择本题评阅标准版本' }}</pre>
+              <pre>{{ isPaperMode ? getPaperCriteriaSummary() || '暂无可用阅卷标准' : getTrialStandardText(currentQuestionNo) || '请选择本题评阅标准版本' }}</pre>
             </div>
             <div class="trial-action-bar">
               <div>
@@ -241,22 +227,25 @@
 
           <div v-if="isBatchMode" class="source-content batch-source">
             <el-empty v-if="!activeBatchTargets.length" description="暂无批量评阅内容，请返回试卷包详情页选择题目" />
-            <details
-              v-for="target in activeBatchTargets"
-              :key="target.key"
-              class="question-block batch-source-item"
-              open
-            >
-              <summary>
-                <span class="question-tag">{{ target.label }}</span>
-                <strong>{{ target.student.student_no }}</strong>
-                {{ getBatchSubQuestion(target)?.question || '未命名题目' }}
-              </summary>
-              <div class="question-content">
-                <ImageList :images="getStandaloneQuestionImages(getBatchSubQuestion(target))" :resolve="resolveImageUrl" @preview="previewImage" />
-                <RichImageContent :text="getBatchSubQuestion(target)?.answer" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
-              </div>
-            </details>
+            <el-collapse v-else :model-value="activeBatchTargets.map((_, index) => String(index + 1))" class="blank-paper-collapse">
+              <el-collapse-item v-for="(target, targetIndex) in activeBatchTargets" :key="target.key" :name="String(targetIndex + 1)">
+                <template #title>
+                  <strong>{{ target.label }}</strong>
+                  <span class="section-title">{{ getDisplayText(getBatchDisplaySubQuestion(target)?.question) || '未命名题目' }}</span>
+                  <el-tag size="small">{{ target.student.student_no }}</el-tag>
+                </template>
+                <div class="question-content">
+                  <div class="question-card">
+                    <div class="question-head"><span class="question-no">{{ target.label }}</span><strong>{{ getDisplayText(getBatchDisplaySubQuestion(target)?.question) || '未命名题目' }}</strong></div>
+                    <div class="answer-panel">
+                      <div class="answer-label">考生答案</div>
+                      <RichImageContent :text="getQuestionAnswerText(getBatchDisplaySubQuestion(target))" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <ImageList :images="getBatchDisplaySubQuestion(target)?.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
+                    </div>
+                  </div>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
           </div>
 
           <div v-else-if="currentStudent" class="source-content">
@@ -289,38 +278,58 @@
             </div>
 
             <template v-if="isPaperMode">
-              <details
-                v-for="(topic, topicIndex) in displayQuestions"
-                :key="topicIndex"
-                class="question-block"
-                open
-              >
-                <summary>
-                  <span class="question-tag">大题 {{ topicIndex + 1 }}</span>
-                  {{ topic.question || '未命名题目' }}
-                </summary>
+              <el-collapse :model-value="displayQuestions.map((_, index) => String(index + 1))" class="blank-paper-collapse">
+                <el-collapse-item
+                  v-for="(topic, topicIndex) in displayQuestions"
+                  :key="topicIndex"
+                  :name="String(topicIndex + 1)"
+                >
+                  <template #title>
+                  <strong>第{{ topicIndex + 1 }}大题</strong>
+                  <span class="section-title">{{ getDisplayText(topic.question) || '未命名题目' }}</span>
+                  <el-tag size="small">{{ (topic.sub_question || []).length || 1 }} 题</el-tag>
+                  </template>
                 <div class="question-content">
-                  <RichImageContent :text="topic.answer" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
-                  <ImageList :images="getStandaloneQuestionImages(topic)" :resolve="resolveImageUrl" @preview="previewImage" />
+                  <div v-if="!(topic.sub_question || []).length" class="question-card">
+                    <div class="question-head"><span class="question-no">Q{{ topicIndex + 1 }}</span><strong>{{ getDisplayText(topic.question) || '未命名题目' }}</strong></div>
+                    <div v-if="topic.display_steps?.length" class="steps"><div v-for="(step, stepIndex) in topic.display_steps" :key="stepIndex"><span>（{{ stepIndex + 1 }}）</span>{{ getDisplayText(step) }}</div></div>
+                    <div v-if="getStandaloneQuestionImages(topic).length" class="question-images"><el-tag v-for="image in getStandaloneQuestionImages(topic)" :key="image" size="small" type="info">参考图片：{{ image.split('/').pop() }}</el-tag></div>
+                    <div class="answer-panel">
+                      <div class="answer-label">考生答案</div>
+                      <RichImageContent :text="getQuestionAnswerText(topic)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <ImageList :images="topic.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
+                    </div>
+                  </div>
                   <div
                     v-for="(subQuestion, subIndex) in topic.sub_question || []"
                     :key="subIndex"
-                    class="sub-question"
+                    class="sub-question question-card"
                   >
-                    <div class="sub-title">子题 {{ subIndex + 1 }}：{{ getDisplayText(subQuestion.question) }}</div>
-                    <ImageList :images="getStandaloneQuestionImages(subQuestion)" :resolve="resolveImageUrl" @preview="previewImage" />
-                    <RichImageContent :text="subQuestion.answer" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                  <div class="question-head"><span class="question-no">Q{{ topicIndex + 1 }}{{ (topic.sub_question || []).length > 1 ? `.${subIndex + 1}` : '' }}</span><strong>{{ getDisplayText(subQuestion.question) || '未命名题目' }}</strong></div>
+                    <div v-if="subQuestion.display_steps?.length" class="steps"><div v-for="(step, stepIndex) in subQuestion.display_steps" :key="stepIndex"><span>（{{ stepIndex + 1 }}）</span>{{ getDisplayText(step) }}</div></div>
+                    <div v-if="getStandaloneQuestionImages(subQuestion).length" class="question-images"><el-tag v-for="image in getStandaloneQuestionImages(subQuestion)" :key="image" size="small" type="info">参考图片：{{ image.split('/').pop() }}</el-tag></div>
+                    <div class="answer-panel">
+                      <div class="answer-label">考生答案</div>
+                      <RichImageContent :text="getQuestionAnswerText(subQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <ImageList :images="subQuestion.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
+                    </div>
                   </div>
                 </div>
-              </details>
+                </el-collapse-item>
+              </el-collapse>
             </template>
 
             <template v-else>
               <div class="question-block single-question">
-                <div class="question-tag">大题 {{ topicNumber }} / 子题 {{ subNumber }}</div>
-                <div class="sub-title">{{ getDisplayText(targetSubQuestion?.question) || '未命名小题' }}</div>
-                <ImageList :images="getStandaloneQuestionImages(targetSubQuestion)" :resolve="resolveImageUrl" @preview="previewImage" />
-                <RichImageContent :text="targetSubQuestion?.answer" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                <div class="question-card">
+                  <div class="question-head"><span class="question-no">Q{{ topicNumber }}{{ displayTargetSubQuestion?.sub_question ? `.${subNumber}` : '' }}</span><strong>{{ getDisplayText(displayTargetSubQuestion?.question) || '未命名小题' }}</strong></div>
+                <ImageList :images="getStandaloneQuestionImages(displayTargetSubQuestion)" :resolve="resolveImageUrl" @preview="previewImage" />
+                <div class="answer-panel">
+                  <div class="answer-label">考生答案</div>
+                  <RichImageContent :text="getQuestionAnswerText(displayTargetSubQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                  <ImageList :images="displayTargetSubQuestion?.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
+                </div>
+                </div>
               </div>
             </template>
           </div>
@@ -346,7 +355,7 @@ import { ElMessage } from 'element-plus';
 import { ArrowLeft, ArrowRight, CircleCheck, Loading } from '@element-plus/icons-vue';
 import { listServices } from '@/api/mcp';
 import type { McpServiceInfo } from '@/types/marketplace';
-import { getGradingStandardVersions, getGradingTemplates, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, gradeBatchWithMcp, gradeWithMcp, type BatchGradingResult, type BatchGradingTarget, type ExamGradingStandard, type ExamGradingTemplate, type GradingPayload, type GradingResult, type GradingStandardItem, type GradingTemplateItem, type LocalGradingRecordItem, type StudentQuestionJson, type StudentSubQuestionJson } from '@/api/teacher-scoring';
+import { getCandidateAssignments, getGradingStandardVersions, getGradingTemplates, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, gradeBatchWithMcp, gradeWithMcp, type BatchGradingResult, type BatchGradingSubQuestion, type BatchGradingTarget, type CandidateAssignmentRecord, type ExamGradingStandard, type ExamGradingTemplate, type GradingPayload, type GradingResult, type GradingStandardItem, type GradingTemplateItem, type LocalGradingRecordItem, type StudentQuestionJson, type StudentSubQuestionJson } from '@/api/teacher-scoring';
 import {
   buildImageResolver,
   calculateTotalScore,
@@ -361,6 +370,9 @@ import {
   type LocalPackageData,
   type LocalStudentAnswer
 } from '@/utils/local-scoring-package';
+import { buildBlankPaperQuestions } from '@/utils/blank-paper-display';
+import { findStandardPaperStructure, loadLatestStandardStructure } from '@/utils/paper-structure';
+import { getAssignmentFileNames, orderAssignmentFields } from '@/utils/assignment-files';
 
 const ImageList = defineComponent({
   props: {
@@ -432,7 +444,7 @@ defineOptions({
 
 const route = useRoute();
 const router = useRouter();
-// auto=1 时进入自动执行模式：隐藏配置 UI，按已保存的阅卷模板直接开始评分
+// auto=1 时进入自动执行模式：隐藏配置 UI，按每道题已保存的阅卷标准直接开始评分
 const autoMode = computed(() => String(route.query.auto || '') === '1');
 const autoRunning = ref(false);
 const autoFinished = ref(false);
@@ -449,11 +461,13 @@ const gradingResult = ref<GradingResult | null>(null);
 const gradingResults = ref<GradingResult[]>([]);
 const batchGradingResult = ref<BatchGradingResult | null>(null);
 const gradingStandardVersions = ref<ExamGradingStandard[]>([]);
+// 版本列表未返回结构快照字段时的兜底：最新标准的快照（latest 接口确认返回快照）
+const latestStructureFallback = ref<Record<string, any> | null>(null);
 const gradingTemplates = ref<ExamGradingTemplate[]>([]);
 const standardLoading = ref(false);
 const standardLoadError = ref('');
 const selectedStandardId = ref<string | undefined>();
-const selectedTemplateId = ref<number | undefined>();
+const selectedTemplateId = ref<number | undefined>(0);
 const selectedTrialStudentNos = ref<string[]>([]);
 const selectedBatchStandardIdMap = ref<Record<string, string | undefined>>({});
 const selectedTrialRecordIdMap = ref<Record<string, number | undefined>>({});
@@ -461,8 +475,19 @@ const paperStudentPage = ref(1);
 const trialGradingRecords = ref<LocalGradingRecordItem[]>([]);
 // 全部评分记录（含正式评阅 is_trial=false），供正式评阅模式展示分数
 const allGradingRecords = ref<LocalGradingRecordItem[]>([]);
+const candidateAssignmentMap = ref<Record<string, CandidateAssignmentRecord>>({});
 
 const mode = computed(() => String(route.query.mode || ''));
+const taskStandardId = computed(() => {
+  const value = Number(route.query.standardId || 0);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+});
+// 展示结构来源：阅卷标准结构快照优先（任务绑定标准 > 最新版本，含教师
+// 新增/修正的题目），版本列表没有快照字段时用 latest 兜底，都没有的旧标准
+// 回退空白卷，保持原有行为。
+const displayStructure = computed(() => latestStructureFallback.value
+  || findStandardPaperStructure(gradingStandardVersions.value, taskStandardId.value)
+  || localPackage.value?.blank_paper_json || null);
 const topicNumber = computed(() => Number(route.query.topic || 1));
 const subNumber = computed(() => Number(route.query.sub || 1));
 const isBatchMode = computed(() => mode.value === 'batch-trial' || mode.value === 'batch-grade');
@@ -490,15 +515,15 @@ const trialModeLabel = computed(() => {
   if (!isTrialMode.value) return '正式评阅';
   return isPaperMode.value ? '整卷试阅' : '单题试阅';
 });
-// 评阅基准工作台副标题：正式评阅默认沿用试阅阶段手动选择的评阅标准版本/阅卷模板
+// 评阅基准工作台副标题：正式评阅按每道题已保存的阅卷标准执行
 const workbenchSubtitle = computed(() => {
   if (isTrialMode.value) {
     return isPaperMode.value
-      ? '选择阅卷模板和试阅考生，先看效果再进入正式评阅。'
+      ? '按每道题阅卷标准和试阅考生，先看效果再进入正式评阅。'
       : '选择评阅标准和试阅考生，先看效果再进入正式评阅。';
   }
   if (isPaperMode.value) {
-    return '正式整卷评阅默认沿用试阅所选阅卷模板，按模板中各题标准内保存的 MCP 与评分档位逐题执行。';
+    return '正式整卷评阅按每道题当前阅卷标准内保存的 MCP 与评分档位逐题执行。';
   }
   return '正式评阅默认沿用试阅所选评阅标准版本，按标准内保存的 MCP 与评分档位执行。';
 });
@@ -538,16 +563,6 @@ const getQuestionNoFromIndexes = (topicIndex: number, subIndex: number) => (
   subIndex >= 0 ? `${topicIndex + 1}.${subIndex + 1}` : `${topicIndex + 1}`
 );
 
-// “背景资料”类小题只是题干材料（如第四大题 4.1），不是作答题目：
-// 不生成评阅目标、不参与评分与总分，避免大题总分被错误拆分到题干上
-const isBackgroundSubQuestion = (sub?: { question?: unknown; is_background?: unknown } | null) => {
-  if (!sub) return false;
-  if (sub.is_background) return true;
-  const title = String(sub.question || '').trim().split('\n', 1)[0] || '';
-  const stripped = title.replace(/^[\d一二三四五六七八九十]+[.、．]\s*/, '');
-  return stripped.startsWith('背景资料') || stripped.startsWith('背景材料');
-};
-
 const normalizeBatchTargetIndexes = (student: LocalStudentAnswer, topicIndex: number, subIndex: number) => {
   const topic = getQuestionList(student.answer_json || null)[topicIndex];
   if (!topic) return null;
@@ -568,10 +583,8 @@ const buildStudentBatchTargets = (student: LocalStudentAnswer) => getQuestionLis
   .flatMap((topic, topicIndex): BatchQuestionEntry[] => {
     const subQuestions = topic.sub_question || [];
     if (subQuestions.length) {
-      // 过滤背景资料小题但保留原始下标，保证题号（如 4.2）不变
       return subQuestions
         .map((subQuestion, subIndex) => ({ subQuestion, subIndex }))
-        .filter((item) => !isBackgroundSubQuestion(item.subQuestion))
         .map((item) => ({ topic, subQuestion: item.subQuestion, topicIndex, subIndex: item.subIndex }));
     }
     return [{ topic, subQuestion: null, topicIndex, subIndex: -1 }];
@@ -612,7 +625,9 @@ const batchTargetViews = computed<BatchTargetView[]>(() => {
     if (!student) return [];
     const normalized = normalizeBatchTargetIndexes(student, parsed.topicIndex, parsed.subIndex);
     if (!normalized) return [];
-    return buildStudentBatchTargets(student).filter((target) => target.topicIndex === normalized.topicIndex);
+    return buildStudentBatchTargets(student).filter((target) =>
+      target.topicIndex === normalized.topicIndex && target.subIndex === normalized.subIndex
+    );
   });
   if (parsedTargets.length) {
     const deduped = new Map<string, BatchTargetView>();
@@ -727,6 +742,30 @@ const getBatchQuestionNode = (target: BatchTargetView) => {
 
 const getBatchSubQuestion = getBatchQuestionNode;
 
+const getBatchDisplaySubQuestion = (target: BatchTargetView) => {
+  const topic = displayQuestions.value[target.topicIndex];
+  return target.subIndex >= 0 ? topic?.sub_question?.[target.subIndex] : topic;
+};
+
+// 评阅请求「题目」段的题干用结构快照合并后的文本（材料+要求），避免把
+// 考生解析结果的文档标题（如 WordA）当题干传给评分服务；合并后的大题
+// 标题若是「第N大题」这类占位（见 blank-paper-display），整题调用时
+// 取其唯一小题的材料全文作为题干。
+const getMergedQuestionStem = (student: LocalStudentAnswer | undefined, topicIndex: number, subIndex: number) => {
+  if (!student) return '';
+  const merged = buildBlankPaperQuestions(
+    getQuestionList(student.answer_json || null),
+    displayStructure.value
+  );
+  const topic = merged[topicIndex];
+  if (!topic) return '';
+  const subs = topic.sub_question || [];
+  const node = subIndex >= 0 && subs.length
+    ? subs[subIndex]
+    : (subIndex < 0 && subs.length === 1 ? subs[0] : topic);
+  return getDisplayText(node?.question || '').trim();
+};
+
 const getQuestionVersionNo = (item: GradingStandardItem, fallbackVersion: number) => {
   const rawVersion = Number(item.question_version_no || 0);
   return rawVersion > 0 ? rawVersion : fallbackVersion;
@@ -756,6 +795,32 @@ const getQuestionStandardVersions = (questionNo: string) => {
     || a.standard.standard_id - b.standard.standard_id);
 };
 
+// 阅卷标准的新版本会沿用未修改题目的 item（item_id 相同）。上面的选项列表
+// 按 item_id 去重后，这些共享题目只会保留最早标准（如 V1）的选项，导致
+// 按任务标准（如 V3）评阅时找不到绑定标准，保存的评分记录 standard_id
+// 落回旧版本，结果页按任务标准过滤时这些记录被排除、考生显示未完成。
+// 这里直接从任务标准自身的 standard_items 里解析题目，保证整卷正式评阅
+// 的每道题都按任务绑定的标准保存记录（评分内容不变，只修正归属标记）。
+type QuestionStandardVersion = { standard: ExamGradingStandard; item: GradingStandardItem; version_no: number };
+
+const getTaskStandardItemForQuestion = (questionNo: string): QuestionStandardVersion | null => {
+  if (!taskStandardId.value) return null;
+  const taskStandard = gradingStandardVersions.value
+    .find((standard) => Number(standard.standard_id || 0) === taskStandardId.value);
+  if (!taskStandard) return null;
+  const normalized = String(questionNo || '').trim();
+  const items = taskStandard.standard_items || [];
+  const findByNo = (target: string) => items.find((item) => String(item.question_no || '').trim() === target);
+  // 整题目标（大题号如"2"，覆盖 2.1/2.2）：标准里只保存小题条目，
+  // 按第一大题小题条目解析版本，保证整题评分记录也归属任务标准，
+  // 否则缺省元数据会由后端回退到最新标准，结果页按任务标准过滤时整题记录被排除。
+  const exact = findByNo(normalized)
+    || (normalized.includes('.') ? findByNo(normalized.split('.')[0]) : undefined)
+    || (!normalized.includes('.') ? findByNo(`${normalized}.1`) : undefined);
+  if (!exact) return null;
+  return { standard: taskStandard, item: exact, version_no: getQuestionVersionNo(exact, 1) };
+};
+
 const standardOptions = computed(() => getStandardOptionsForQuestion(currentQuestionNo.value));
 type StandardOptionItem = {
   value: string;
@@ -782,14 +847,14 @@ const getQuestionTypeLabel = (value?: string) => {
 
 const getStandardOptionsForQuestion = (questionNo: string): StandardOptionItem[] => getQuestionStandardVersions(questionNo).map((version) => ({
   value: `${version.standard.standard_id}:${version.item.item_id || version.version_no}`,
-  label: `本题 V${version.version_no} / ${getQuestionTypeLabel(version.item.question_type)}`,
+  label: `阅卷标准 V${version.standard.version_no || '-'} / 本题 V${version.version_no} / ${getQuestionTypeLabel(version.item.question_type)}`,
   version,
   criteria: version.item.grading_criteria || '',
   reference: version.item.reference_answer || ''
 }));
 
 const getBatchStandardOptionLabel = (questionNo: string, option: StandardOptionItem) => (
-  `Q${questionNo} / 本题 V${option.version.version_no} / ${getQuestionTypeLabel(option.version.item.question_type)}`
+  `Q${questionNo} / 阅卷标准 V${option.version.standard.version_no || '-'} / 本题 V${option.version.version_no} / ${getQuestionTypeLabel(option.version.item.question_type)}`
 );
 
 const selectedStandardOption = computed(() => standardOptions.value.find((option) => option.value === selectedStandardId.value));
@@ -799,12 +864,25 @@ const templateOptions = computed(() => gradingTemplates.value.map((template) => 
   label: `${template.template_name} / ${template.template_items?.length || 0}题 / ${template.created_at || ''}`,
   template
 })));
-const selectedTemplate = computed(() => templateOptions.value.find((option) => option.value === selectedTemplateId.value)?.template || null);
-const selectedTemplateItemMap = computed(() => {
-  const map = new Map<string, GradingTemplateItem>();
-  (selectedTemplate.value?.template_items || []).forEach((item) => map.set(item.question_no, item));
-  return map;
+const selectedTemplate = computed(() => null);
+const paperQuestionNos = computed(() => {
+  const values = new Set<string>();
+  // 整卷题号清单按展示结构（阅卷标准快照优先，含教师新增题）与考生答卷
+  // 合并后推导，与题目树一致；无快照时行为与原来（考生解析结构）相同。
+  paperModeStudents.value.forEach((student) => buildBlankPaperQuestions(
+    getQuestionList(student.answer_json || null),
+    displayStructure.value
+  ).forEach((topic: any, topicIndex: number) => {
+    const subs = topic.sub_question || [];
+    if (subs.length) subs.forEach((_: any, subIndex: number) => values.add(`${topicIndex + 1}.${subIndex + 1}`));
+    else values.add(String(topicIndex + 1));
+  }));
+  return Array.from(values).sort((a, b) => {
+    const left = parseQuestionNoToIndexes(a); const right = parseQuestionNoToIndexes(b);
+    return (left?.topicIndex || 0) - (right?.topicIndex || 0) || (left?.subIndex || -1) - (right?.subIndex || -1);
+  });
 });
+const selectedTemplateItemMap = computed(() => new Map<string, GradingTemplateItem>());
 
 const trialStudentNos = computed(() => {
   const selected = selectedTrialStudentNos.value.length ? selectedTrialStudentNos.value : (currentStudent.value ? [currentStudent.value.student_no] : []);
@@ -826,7 +904,15 @@ const displayStudent = computed<LocalStudentAnswer | undefined>(() => {
   const pageIndex = Math.min(Math.max(paperStudentPage.value, 1), paperStudentTotalPages.value) - 1;
   return paperModeStudents.value[pageIndex] || currentStudent.value;
 });
-const displayQuestions = computed(() => getQuestionList(displayStudent.value?.answer_json || null));
+const displayQuestions = computed(() => buildBlankPaperQuestions(
+  getQuestionList(displayStudent.value?.answer_json || null),
+  displayStructure.value
+));
+const displayTargetSubQuestion = computed(() => {
+  const topic = displayQuestions.value[topicNumber.value - 1];
+  const subQuestions = topic?.sub_question || [];
+  return subQuestions[subNumber.value - 1] || (!subQuestions.length ? topic : null);
+});
 const displayTotalScore = computed(() => {
   if (!displayStudent.value) return null;
   return calculateDisplayedTotalScore(displayStudent.value);
@@ -844,7 +930,7 @@ const trialPlanSummaryText = computed(() => {
   const studentCount = trialStudentNos.value.length;
   const targetLabel = isTrialMode.value ? '试阅目标' : '评阅目标';
   if (isPaperMode.value) {
-    const questionCount = selectedTemplate.value?.template_items?.length || 0;
+    const questionCount = paperQuestionNos.value.length;
     return `${questionCount} 道题 / ${studentCount} 位考生 / ${questionCount * studentCount} 个${targetLabel}`;
   }
   return `1 道题 / ${studentCount} 个${targetLabel}`;
@@ -878,21 +964,33 @@ const getMajorQuestionNosForQuestionNo = (questionNo?: string) => {
 const getSelectedBatchStandardId = (questionNo: string) => {
   const selected = selectedBatchStandardIdMap.value[questionNo];
   if (selected) return selected;
+  const taskStandard = taskStandardId.value;
+  if (taskStandard) {
+    const taskOption = getStandardOptionsForQuestion(questionNo).find((option) => (
+      Number(option.version.standard.standard_id || 0) === taskStandard
+    ));
+    if (taskOption) return taskOption.value;
+    const taskItem = getTaskStandardItemForQuestion(questionNo);
+    if (taskItem) return `${taskItem.standard.standard_id}:${taskItem.item.item_id || taskItem.version_no}`;
+  }
   return getStandardOptionsForQuestion(questionNo).slice(-1)[0]?.value;
 };
 
 const getBatchStandardVersionForQuestion = (questionNo: string) => {
   const selectedId = getSelectedBatchStandardId(questionNo);
-  return getQuestionStandardVersions(questionNo).find((version) => `${version.standard.standard_id}:${version.item.item_id || version.version_no}` === selectedId) || getQuestionStandardVersions(questionNo).slice(-1)[0] || null;
+  return getQuestionStandardVersions(questionNo).find((version) => `${version.standard.standard_id}:${version.item.item_id || version.version_no}` === selectedId)
+    || getTaskStandardItemForQuestion(questionNo)
+    || getQuestionStandardVersions(questionNo).slice(-1)[0] || null;
 };
 
 // 阅卷标准里教师指定的总分优先，缺失时回退题干解析出的分值
 const getStandardMaxScore = (questionNo: string): number | null => {
   if (!questionNo) return null;
   const candidates: Array<GradingStandardItem | null | undefined> = [];
-  if (isPaperMode.value && selectedTemplate.value) {
-    candidates.push(selectedTemplateItemMap.value.get(questionNo)?.standard_item);
-  }
+  // 阅卷任务绑定的标准最优先（整卷评阅同样适用）。此前只在批量模式下
+  // 读取任务标准，整卷评阅会取该题各版本中的最新版本满分（如 4.2 在
+  // V3 是 10 分、任务绑定的 V1 是 20 分），导致服务按错误满分评分。
+  candidates.push(getTaskStandardItemForQuestion(questionNo)?.item);
   if (isBatchMode.value) {
     candidates.push(getBatchStandardVersionForQuestion(questionNo)?.item);
   }
@@ -922,22 +1020,16 @@ const parseQuestionNoToIndexes = (questionNo?: string) => {
   return { topicIndex, subIndex, questionNo: getQuestionNoFromIndexes(topicIndex, subIndex) };
 };
 
-// 整卷模板题目解析：背景资料小题（如 4.1）不生成评阅目标
 const resolvePaperTemplateTarget = (student: LocalStudentAnswer, questionNo: string) => {
   const parsed = parseQuestionNoToIndexes(questionNo);
   if (!parsed) return null;
-  if (parsed.subIndex >= 0) {
-    const topic = getQuestionList(student.answer_json || null)[parsed.topicIndex];
-    const sub = topic?.sub_question?.[parsed.subIndex];
-    if (isBackgroundSubQuestion(sub)) return null;
-  }
   return parsed;
 };
 
 const getPaperTrialTargets = computed<BatchTargetView[]>(() => {
-  if (!isTrialMode.value || !isPaperMode.value || !selectedTemplate.value) return [];
-  return paperModeStudents.value.flatMap((student) => (selectedTemplate.value?.template_items || []).flatMap((item) => {
-    const parsed = resolvePaperTemplateTarget(student, item.question_no);
+  if (!isTrialMode.value || !isPaperMode.value) return [];
+  return paperModeStudents.value.flatMap((student) => paperQuestionNos.value.flatMap((questionNo) => {
+    const parsed = resolvePaperTemplateTarget(student, questionNo);
     if (!parsed) return [];
     return [{
       key: `${student.student_no}__${parsed.topicIndex + 1}__${parsed.subIndex + 1}`,
@@ -949,9 +1041,9 @@ const getPaperTrialTargets = computed<BatchTargetView[]>(() => {
   }));
 });
 const getFormalPaperTargets = computed<BatchTargetView[]>(() => {
-  if (isTrialMode.value || !isPaperMode.value || !selectedTemplate.value) return [];
-  return paperModeStudents.value.flatMap((student) => (selectedTemplate.value?.template_items || []).flatMap((item) => {
-    const parsed = resolvePaperTemplateTarget(student, item.question_no);
+  if (isTrialMode.value || !isPaperMode.value) return [];
+  return paperModeStudents.value.flatMap((student) => paperQuestionNos.value.flatMap((questionNo) => {
+    const parsed = resolvePaperTemplateTarget(student, questionNo);
     if (!parsed) return [];
     return [{
       key: `${student.student_no}__${parsed.topicIndex + 1}__${parsed.subIndex + 1}`,
@@ -969,22 +1061,14 @@ const getStandardVersionForQuestion = (questionNo?: string) => {
     const batchVersion = getBatchStandardVersionForQuestion(normalizedQuestionNo);
     if (batchVersion) return batchVersion;
   }
-  if (isPaperMode.value && selectedTemplate.value) {
-    const templateItem = selectedTemplateItemMap.value.get(normalizedQuestionNo);
-    if (templateItem?.standard_item) {
-      return {
-        standard: {
-          standard_id: templateItem.standard_id,
-          version_no: templateItem.standard_version_no || 0
-        } as ExamGradingStandard,
-        item: templateItem.standard_item,
-        version_no: templateItem.question_version_no || templateItem.standard_item.question_version_no || templateItem.standard_version_no || 0,
-        templateItem
-      };
-    }
-  }
   if (normalizedQuestionNo === currentQuestionNo.value && selectedStandardOption.value) {
     return selectedStandardOption.value.version;
+  }
+  if (taskStandardId.value) {
+    const taskVersion = getQuestionStandardVersions(normalizedQuestionNo).find((version) => (
+      Number(version.standard.standard_id || 0) === taskStandardId.value
+    )) || getTaskStandardItemForQuestion(normalizedQuestionNo);
+    if (taskVersion) return taskVersion;
   }
   return getQuestionStandardVersions(normalizedQuestionNo).slice(-1)[0] || null;
 };
@@ -1116,17 +1200,102 @@ const getMcpServiceNameByUuid = (uuid: string) => {
 };
 
 onMounted(async () => {
-  await Promise.allSettled([loadData(), loadMcpServices(), loadTrialStandards()]);
+  await loadData();
+  await Promise.allSettled([loadMcpServices(), loadTrialStandards(), loadCandidateAssignmentResults()]);
+  // 批量评分需要在试卷包加载完成后按任务绑定的标准为每道题初始化选择值。
+  if (taskStandardId.value && isBatchMode.value) {
+    const nextSelections = { ...selectedBatchStandardIdMap.value };
+    batchPlanQuestionNos.value.forEach((questionNo) => {
+      const taskOption = getStandardOptionsForQuestion(questionNo).find((option) => (
+        Number(option.version.standard.standard_id || 0) === taskStandardId.value
+      ));
+      if (taskOption) nextSelections[questionNo] = taskOption.value;
+    });
+    selectedBatchStandardIdMap.value = nextSelections;
+  }
   await loadTrialGradingRecords();
   applyFormalBenchmarkDefaults();
   window.addEventListener('keydown', handleKeydown);
   if (autoMode.value) {
     // 自动执行模式：直接按已保存的阅卷模板/标准开始评分，完成后自动返回试卷包详情页
     autoRunning.value = true;
+    if (isTrialMode.value && !isBatchMode.value && window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'teacher-trial-progress',
+        completed: 0,
+        total: 1,
+        stage: '正在调用 MCP 评分服务...'
+      }, window.location.origin);
+    }
+    if (!isTrialMode.value && window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'teacher-trial-progress',
+        completed: 0,
+        total: isBatchMode.value ? Math.max(1, activeBatchTargets.value.length) : 1,
+        stage: '正在调用 MCP 评分服务...'
+      }, window.location.origin);
+    }
     const ok = await saveAndStartGrading();
     autoRunning.value = false;
+    if (isTrialMode.value && window.parent && window.parent !== window) {
+      const temporaryResults = batchGradingResult.value?.results?.length
+        ? batchGradingResult.value.results
+        : gradingResults.value.map((item, index) => ({
+          key: `${item.student_no || currentStudent.value?.student_no || ''}__${item.question_no || currentQuestionNo.value}__${item.service_uuid || index}`,
+          status: item.status || (item.result ? 'success' : 'failed'),
+          student_no: item.student_no || currentStudent.value?.student_no || '',
+          service_uuid: item.service_uuid,
+          question_no: item.question_no || currentQuestionNo.value,
+          question_label: item.question_label || `Q${currentQuestionNo.value}`,
+          question_text: item.question_text || getTargetQuestionText(),
+          answer_text: item.answer_text || (hasExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') ? getExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') : getTargetAnswerText()),
+          answer_file_names: hasExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') ? [] : (item.answer_file_names || Array.from(new Set([
+            ...getQuestionAnswerFileNames(targetSubQuestion.value),
+            ...getCandidateAnswerFileNames(item.student_no || currentStudent.value?.student_no || '', item.question_no || currentQuestionNo.value, getDisplayText(targetSubQuestion.value?.question))
+          ]))),
+          max_score: item.max_score ?? getTargetMaxScore(),
+          result: item.result ?? item,
+          grading_desc: item.grading_record?.grading_desc || (item as any).grading_desc || '',
+          grading_record: item.grading_record,
+          error: item.save_error || (item as any).error
+        }));
+      // postMessage 只能传结构化可克隆数据，评分结果中可能包含响应式对象或其他非可克隆字段。
+      let serializableResults: any[] = [];
+      try {
+        serializableResults = JSON.parse(JSON.stringify(temporaryResults || []));
+      } catch {
+        serializableResults = (temporaryResults || []).map((item: any) => ({
+          key: String(item?.key || ''),
+          status: String(item?.status || ''),
+          student_no: String(item?.student_no || ''),
+          service_uuid: String(item?.service_uuid || ''),
+          question_no: String(item?.question_no || ''),
+          question_label: String(item?.question_label || ''),
+          question_text: String(item?.question_text || ''),
+          answer_text: String(item?.answer_text || ''),
+          answer_file_names: Array.isArray(item?.answer_file_names) ? item.answer_file_names : [],
+          max_score: Number(item?.max_score || 0),
+          result: typeof item?.result === 'string' ? item.result : null,
+          error: item?.error ? String(item.error) : undefined
+        }));
+      }
+      window.parent.postMessage({
+        type: 'teacher-trial-complete',
+        ok,
+        results: serializableResults
+      }, window.location.origin);
+      return;
+    }
     // 内嵌在试卷包详情页中运行时，用消息通知父页面刷新结果，不做整页跳转
     if (window.parent && window.parent !== window) {
+      if (!isTrialMode.value) {
+        const total = isBatchMode.value ? Math.max(1, activeBatchTargets.value.length) : 1;
+        window.parent.postMessage({
+          type: 'teacher-trial-progress',
+          completed: ok ? total : 0,
+          total
+        }, window.location.origin);
+      }
       window.parent.postMessage({ type: 'teacher-grading-auto-done', ok }, window.location.origin);
       return;
     }
@@ -1266,6 +1435,43 @@ const loadData = async () => {
   }
 };
 
+const getCandidateAnswerFileNames = (studentNo: string, questionNo: string, questionText = ''): string[] => {
+  const assignment = candidateAssignmentMap.value[String(studentNo || '').trim()];
+  // 与试卷包详情/考生详情同一套归属规则：Q1.1 精确匹配，Q2_PR/Q2_DW 等
+  // 编码按题干关键词路由到对应小题，只取本题归属的文件，避免串题。
+  return getAssignmentFileNames(assignment, questionNo, questionText);
+};
+
+// 11 系等纯文本题：考生作答在归属抽取内容里（"字段：值"逐行）。有抽取
+// 内容时，评分记录不再把答卷文档转换文本与杂项文件（如 tctest 数据库
+// 备份）当考生答案/答案文件传出去。
+const getExtractionAnswerText = (studentNo: string): string => {
+  const key = String(studentNo || '').trim();
+  const assignment = candidateAssignmentMap.value[key]
+    || Object.entries(candidateAssignmentMap.value).find(([entryKey]) => entryKey.trim() === key)?.[1];
+  const fields = (((assignment as any)?.assignment_json?.student?.extractedContent?.fields || {}) as Record<string, string>);
+  return orderAssignmentFields(fields).map(({ field, value }) => `${field}：${value}`).join('\n');
+};
+const hasExtractionAnswerText = (studentNo: string): boolean => Boolean(getExtractionAnswerText(studentNo).trim());
+
+const loadCandidateAssignmentResults = async () => {
+  const localId = localPackage.value?.local_package_id || String(route.params.packageId || '').replace(/^local_/, '');
+  if (!localId || !/^\d+$/.test(String(localId))) return;
+  try {
+    const response = await getCandidateAssignments(String(route.params.subjectId), String(route.params.examId), localId);
+    if (![0, 200].includes(response?.code)) return;
+    const next: Record<string, CandidateAssignmentRecord> = {};
+    (response.data?.assignments || []).forEach((record) => {
+      const studentNo = String(record.student_no || '').trim();
+      if (studentNo) next[studentNo] = record;
+    });
+    candidateAssignmentMap.value = next;
+  } catch (error) {
+    console.warn('读取答案抽取结果失败，试阅结果页将显示传统答案文本', error);
+    candidateAssignmentMap.value = {};
+  }
+};
+
 const STANDARD_LOAD_TIMEOUT_MS = 12000;
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
@@ -1286,20 +1492,31 @@ const loadTrialStandards = async () => {
   standardLoading.value = true;
   standardLoadError.value = '';
   try {
-    const [standardsResponse, templatesResponse] = await withTimeout(Promise.all([
+    const standardsResponse = await withTimeout(
       getGradingStandardVersions(String(route.params.subjectId), String(route.params.examId)),
-      getGradingTemplates(String(route.params.subjectId), String(route.params.examId))
-    ]), STANDARD_LOAD_TIMEOUT_MS, '评阅标准加载超时，请稍后刷新重试');
+      STANDARD_LOAD_TIMEOUT_MS,
+      '评阅标准加载超时，请稍后刷新重试'
+    );
     gradingStandardVersions.value = standardsResponse.data || [];
-    gradingTemplates.value = templatesResponse.data || [];
+    // 版本列表未返回结构快照字段时补拉最新标准兜底（latest 接口确认返回快照）
+    if (!findStandardPaperStructure(gradingStandardVersions.value, taskStandardId.value)) {
+      latestStructureFallback.value = await withTimeout(
+        loadLatestStandardStructure(String(route.params.subjectId), String(route.params.examId)),
+        STANDARD_LOAD_TIMEOUT_MS,
+        ''
+      ).catch(() => null);
+    }
+    if (taskStandardId.value) {
+      const taskOption = standardOptions.value.find((option) => (
+        Number(option.version.standard.standard_id || 0) === taskStandardId.value
+      ));
+      if (taskOption) selectedStandardId.value = taskOption.value;
+    }
     if (!selectedStandardId.value && standardOptions.value.length) {
       selectedStandardId.value = standardOptions.value[standardOptions.value.length - 1].value;
     }
-    // 整卷正式评阅同样默认选中最新阅卷模板，随后由 applyFormalBenchmarkDefaults
-    // 按试阅阶段手动选择的模板进行覆盖
-    if (!selectedTemplateId.value && templateOptions.value.length) {
-      selectedTemplateId.value = templateOptions.value[0].value;
-    }
+    // 整卷评分直接使用每道题最新阅卷标准
+    selectedTemplateId.value = 0;
   } catch (error: any) {
     console.error('获取试阅标准失败', error);
     standardLoadError.value = error?.response?.data?.message || error?.message || '获取试阅标准失败';
@@ -1469,7 +1686,6 @@ const calculateDisplayedTotalScore = (student?: LocalStudentAnswer | null): numb
       let subTotal = 0;
       let hasSubScore = false;
       subQuestions.forEach((subQuestion, subIndex) => {
-        if (isBackgroundSubQuestion(subQuestion)) return; // 背景资料小题不计分
         const questionNo = `${topicIndex + 1}.${subIndex + 1}`;
         const recordScore = getMergedTrialScoreForQuestion(student.student_no, questionNo);
         const score = recordScore ?? parseScoreNumber(subQuestion.score);
@@ -1571,14 +1787,7 @@ const applyFormalBenchmarkDefaults = () => {
     return;
   }
   if (isPaperMode.value) {
-    // 整卷正式评阅：沿用最近一次整卷试阅使用的阅卷模板
-    const latestTemplateRecord = [...trialGradingRecords.value]
-      .filter((record) => Boolean(getRecordTemplateId(record)))
-      .sort((a, b) => getRecordSortTime(b) - getRecordSortTime(a))[0];
-    const templateId = latestTemplateRecord ? getRecordTemplateId(latestTemplateRecord) : undefined;
-    if (templateId && templateOptions.value.some((option) => Number(option.value) === Number(templateId))) {
-      selectedTemplateId.value = templateId;
-    }
+    selectedTemplateId.value = 0;
     return;
   }
   // 批量正式评阅：逐题沿用最近一次试阅使用的评阅标准版本
@@ -1650,6 +1859,12 @@ const getQuestionAnswerText = (question: any) => [
   getQuestionAnswerFileText(question)
 ].filter(Boolean).join('\n\n');
 
+const getQuestionAnswerFileNames = (question: any): string[] => Array.from(new Set(
+  collectAnswerFileItems(question?.answer_files)
+    .map((file: any) => String(file?.file_name || file?.fileName || file?.name || '').trim())
+    .filter(Boolean)
+));
+
 const uniqueStrings = (items: string[]) => Array.from(new Set(items.filter(Boolean)));
 
 const getQuestionDisplayImages = (question: any) => uniqueStrings([
@@ -1697,12 +1912,17 @@ const getTemplateCriteriaSummaryForTemplate = (template: ExamGradingTemplate) =>
 评分标准：${standard?.grading_criteria || '暂无'}`;
 }).join('\n\n');
 
-const getTemplateCriteriaSummary = () => selectedTemplate.value ? getTemplateCriteriaSummaryForTemplate(selectedTemplate.value) : '';
+const getTemplateCriteriaSummary = () => getPaperCriteriaSummary();
+const getPaperCriteriaSummary = () => paperQuestionNos.value.map((questionNo) => {
+  const version = getQuestionStandardVersions(questionNo).slice(-1)[0];
+  const standard = version?.item;
+  return `题号 ${questionNo} / 本题V${version?.version_no || standard?.question_version_no || '-'}\n参考答案：${standard?.reference_answer || '暂无'}\n评分标准：${standard?.grading_criteria || '暂无'}`;
+}).join('\n\n');
 
 const getTrialStandardText = (questionNo?: string) => {
   if (isPaperMode.value) {
-    if (!questionNo) return getTemplateCriteriaSummary();
-    const standard = selectedTemplateItemMap.value.get(questionNo)?.standard_item;
+    if (!questionNo) return getPaperCriteriaSummary();
+    const standard = getQuestionStandardVersions(questionNo).slice(-1)[0]?.item;
     if (!standard) return '';
     return `参考答案：${standard.reference_answer || '暂无'}\n评分标准：${standard.grading_criteria || '暂无'}`;
   }
@@ -1733,21 +1953,9 @@ const getSelectedStandardMeta = (questionNo?: string) => {
         standard_id: batchVersion.standard.standard_id,
         standard_version_no: batchVersion.standard.version_no,
         question_version_no: batchVersion.version_no,
-        standard_label: `题号 ${normalizedQuestionNo} / 本题 V${batchVersion.version_no}`
+        standard_label: `题号 ${normalizedQuestionNo} / 阅卷标准 V${batchVersion.standard.version_no || '-'} / 本题 V${batchVersion.version_no}`
       };
     }
-  }
-  if (isPaperMode.value && selectedTemplate.value) {
-    const templateItem = selectedTemplateItemMap.value.get(normalizedQuestionNo);
-    const standard = templateItem?.standard_item;
-    return {
-      template_id: selectedTemplate.value.template_id,
-      template_name: selectedTemplate.value.template_name,
-      standard_id: templateItem?.standard_id,
-      standard_version_no: templateItem?.standard_version_no,
-      question_version_no: templateItem?.question_version_no || standard?.question_version_no,
-      standard_label: `阅卷模板：${selectedTemplate.value.template_name} / 题号 ${normalizedQuestionNo} / 本题 V${templateItem?.question_version_no || standard?.question_version_no || '-'}`
-    };
   }
   const version = getStandardVersionForQuestion(normalizedQuestionNo);
   if (!version) return {};
@@ -1755,7 +1963,7 @@ const getSelectedStandardMeta = (questionNo?: string) => {
     standard_id: version.standard.standard_id,
     standard_version_no: version.standard.version_no,
     question_version_no: version.version_no,
-    standard_label: `题号 ${normalizedQuestionNo} / 本题 V${version.version_no}`
+    standard_label: `题号 ${normalizedQuestionNo} / 阅卷标准 V${version.standard.version_no || '-'} / 本题 V${version.version_no}`
   };
 };
 const buildQuestionTextWithStandard = (baseText: string, questionNo?: string) => {
@@ -1779,14 +1987,17 @@ const collectTargetImages = () => {
 const getTargetQuestionText = () => {
   if (isPaperMode.value) {
     const baseText = questions.value.map((topic, topicIndex) => {
+      const topicStem = getMergedQuestionStem(currentStudent.value, topicIndex, -1) || getDisplayText(topic.question);
       const subText = (topic.sub_question || []).map((subQuestion, subIndex) => (
-        `子题 ${subIndex + 1}：${getDisplayText(subQuestion.question)}\n作答：${getQuestionAnswerText(subQuestion)}`
+        `子题 ${subIndex + 1}：${getMergedQuestionStem(currentStudent.value, topicIndex, subIndex) || getDisplayText(subQuestion.question)}\n作答：${getQuestionAnswerText(subQuestion)}`
       )).join('\n');
-      return `大题 ${topicIndex + 1}：${getDisplayText(topic.question)}\n作答：${getQuestionAnswerText(topic)}\n${subText}`;
+      return `大题 ${topicIndex + 1}：${topicStem}\n作答：${getQuestionAnswerText(topic)}\n${subText}`;
     }).join('\n\n');
     return buildQuestionTextWithStandard(baseText);
   }
-  const baseText = `大题 ${topicNumber.value} / 子题 ${subNumber.value}\n题目：${getDisplayText(targetSubQuestion.value?.question)}\n作答：${getQuestionAnswerText(targetSubQuestion.value)}`;
+  const stem = getMergedQuestionStem(currentStudent.value, topicNumber.value - 1, subNumber.value - 1)
+    || getDisplayText(targetSubQuestion.value?.question || '');
+  const baseText = `大题 ${topicNumber.value} / 子题 ${subNumber.value}\n题目：${stem}\n作答：${getQuestionAnswerText(targetSubQuestion.value)}`;
   return buildQuestionTextWithStandard(baseText, currentQuestionNo.value);
 };
 const getTargetAnswerText = () => {
@@ -1833,8 +2044,10 @@ const getBatchQuestionText = (target: BatchTargetView) => {
   const maxScore = getBatchMaxScore(target);
   const maxScoreText = maxScore !== null ? `本题满分：${maxScore}分
 ` : '';
+  const stem = getMergedQuestionStem(target.student, target.topicIndex, target.subIndex)
+    || getDisplayText(subQuestion?.question || '');
   return `${target.label}
-${maxScoreText}题目：${getDisplayText(subQuestion?.question)}
+${maxScoreText}题目：${stem}
 作答：${getQuestionAnswerText(subQuestion)}`;
 };
 
@@ -1892,11 +2105,43 @@ const buildMajorBatchGroups = (sourceTargets: BatchTargetView[]): MajorBatchGrou
     const questionNo = getBatchQuestionNo(target);
     const serviceUuids = getEffectiveMcpListForTarget(target, questionNo);
     serviceUuids.forEach((serviceUuid) => {
+      const singleKey = `${target.student.student_no}__topic${target.topicIndex + 1}__sub${target.subIndex}__svc${serviceUuid}`;
+      // 小题目标一律按小题独立分组调用（正式/试评一致）：按小题评分的
+      // 服务各自出分、各自保存记录（如 4.1/4.2 分别评分、各有自己的
+      // review_summary），不再合并成大题整题调用。仅无小题的大题级
+      // 目标（subIndex < 0）保留整题分组。
+      if (target.subIndex >= 0) {
+        groupMap.set(singleKey, {
+          key: singleKey,
+          student: target.student,
+          topicIndex: target.topicIndex,
+          serviceUuid,
+          targets: [target],
+          serviceCount: serviceUuids.length
+        });
+        return;
+      }
       // module: 前缀的裸模块（如 SQL 单题评分器）一次只能评一道题，
       // 不能按大题合并调用，需按小题独立分组
       const isSingleQuestionService = String(serviceUuid).startsWith('module:');
-      const groupKey = `${target.student.student_no}__topic${target.topicIndex + 1}__svc${serviceUuid}`
-        + (isSingleQuestionService ? `__sub${target.subIndex}` : '');
+      // 二选一/三选一大题：各小题是互斥的独立选题（如第二大题 PR/DW、
+      // 第三大题 Animate/3ds Max/Unity）。合并成大题请求会让服务按大题
+      // 题干探测选题（如三选一题干里排在首位的关键词），考生实际做的
+      // 选题可能被漏评；按小题独立调用后，每个小题带自己的题干与答案
+      // 文件，服务返回什么就保存什么，与评分服务返回口径一致。
+      const isElectiveTopic = /(?:[一二三四五]|\d+)\s*选一/.test(getDisplayText(getBatchTopic(target)?.question || ''));
+      if (isSingleQuestionService || isElectiveTopic) {
+        groupMap.set(singleKey, {
+          key: singleKey,
+          student: target.student,
+          topicIndex: target.topicIndex,
+          serviceUuid,
+          targets: [target],
+          serviceCount: serviceUuids.length
+        });
+        return;
+      }
+      const groupKey = `${target.student.student_no}__topic${target.topicIndex + 1}__svc${serviceUuid}`;
       const group = groupMap.get(groupKey) || {
         key: groupKey,
         student: target.student,
@@ -2001,7 +2246,11 @@ const buildBatchPayloadTargets = async () => {
         student_no: group.student.student_no,
         question_label: target.label,
         question_text: buildQuestionTextWithStandard(getBatchQuestionText(target), questionNo),
-        answer_text: getBatchAnswerText(target),
+        answer_text: hasExtractionAnswerText(group.student.student_no) ? getExtractionAnswerText(group.student.student_no) : getBatchAnswerText(target),
+        answer_file_names: hasExtractionAnswerText(group.student.student_no) ? [] : Array.from(new Set([
+          ...getQuestionAnswerFileNames(subNode),
+          ...getCandidateAnswerFileNames(target.student.student_no, questionNo, getDisplayText(subNode?.question))
+        ])),
         max_score: getBatchMaxScore(target),
         multi_service: group.serviceCount > 1,
         ...getSelectedStandardMeta(questionNo),
@@ -2014,18 +2263,22 @@ const buildBatchPayloadTargets = async () => {
       // 后端持久化图片的 blob 是空占位，需要先按 url 拉取真实内容
       imageBlob = (await ensureImageBlob(imageFile)) || imageFile.blob;
     }
-    const subQuestions = group.targets.map((target) => {
-      const questionNo = getBatchQuestionNo(target);
-      return {
-        key: target.key,
-        question_no: questionNo,
-        question_label: target.label,
-        question_text: buildQuestionTextWithStandard(getBatchQuestionText(target), questionNo),
-        answer_text: getBatchAnswerText(target),
-        max_score: getBatchMaxScore(target),
-        ...getSelectedStandardMeta(questionNo)
-      };
-    });
+      const subQuestions = group.targets.map((target) => {
+        const questionNo = getBatchQuestionNo(target);
+        return {
+          key: target.key,
+          question_no: questionNo,
+          question_label: target.label,
+          question_text: buildQuestionTextWithStandard(getBatchQuestionText(target), questionNo),
+          answer_text: hasExtractionAnswerText(group.student.student_no) ? getExtractionAnswerText(group.student.student_no) : getBatchAnswerText(target),
+          answer_file_names: hasExtractionAnswerText(group.student.student_no) ? [] : Array.from(new Set([
+            ...getQuestionAnswerFileNames(getBatchSubQuestion(target)),
+            ...getCandidateAnswerFileNames(target.student.student_no, questionNo, getDisplayText(getBatchSubQuestion(target)?.question))
+          ])),
+          max_score: getBatchMaxScore(target),
+          ...getSelectedStandardMeta(questionNo)
+        };
+      });
     return [{
       key: group.key,
       question_no: getMajorGroupQuestionNo(group),
@@ -2034,6 +2287,10 @@ const buildBatchPayloadTargets = async () => {
       question_label: getMajorGroupLabel(group),
       question_text: buildMajorQuestionText(group),
       answer_text: buildMajorAnswerText(group),
+      answer_file_names: Array.from(new Set(group.targets.flatMap((target) => [
+        ...getQuestionAnswerFileNames(getBatchSubQuestion(target)),
+        ...getCandidateAnswerFileNames(target.student.student_no, getBatchQuestionNo(target), getDisplayText(getBatchSubQuestion(target)?.question))
+      ]))),
       max_score: getMajorMaxScore(group),
       // 多服务分工评阅：各服务按评分标准中自己部分的满分评分
       multi_service: group.serviceCount > 1,
@@ -2044,12 +2301,8 @@ const buildBatchPayloadTargets = async () => {
   return nested.flat().filter((item): item is BatchGradingTarget => Boolean(item));
 };
 const saveAndStartBatchGrading = async (): Promise<boolean> => {
-  if (!isTrialMode.value && isPaperMode.value && !selectedTemplateId.value) {
-    ElMessage.warning('请先选择整卷阅卷模板');
-    return false;
-  }
   if (!activeBatchTargets.value.length) {
-    ElMessage.warning(isPaperMode.value ? '暂无整卷评阅内容，请先选择阅卷模板' : '暂无批量评阅内容，请先选择题目');
+    ElMessage.warning(isPaperMode.value ? '暂无整卷评阅内容，请先配置阅卷标准' : '暂无批量评阅内容，请先选择题目');
     return false;
   }
   const payloadTargets = await buildBatchPayloadTargets();
@@ -2058,6 +2311,9 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
   if (missingMcp.length) {
     ElMessage.warning('部分题目没有可用 MCP，请在评阅标准中补充 MCP');
     return false;
+  }
+  if (isTrialMode.value && autoMode.value && window.parent !== window) {
+    return await runTemporaryTrialBatch(payloadTargets.filter(Boolean) as BatchGradingTarget[]);
   }
   gradingLoading.value = true;
   gradingResult.value = null;
@@ -2091,6 +2347,9 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
             : gradeError ? `评分失败${failedLabel ? `（${failedLabel}）` : ''}：${gradeError}`
               : '评分完成，但未收到后端保存的试阅记录，请检查试卷包ID或后端保存日志'
         );
+        // 没有任何持久化记录时不能向父页面报告成功，否则详情页会
+        // 显示“评分完成”但没有分数。
+        return false;
       }
     } else {
       // 正式评阅完成后刷新记录，保证页面上各题分数与总分立即按正式记录展示
@@ -2107,6 +2366,150 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
   }
 };
 
+const runTemporaryTrialBatch = async (targets: BatchGradingTarget[]): Promise<boolean> => {
+  const results: BatchGradingResult['results'] = [];
+  const total = targets.length;
+  window.parent.postMessage({
+    type: 'teacher-trial-progress',
+    completed: 0,
+    total,
+    stage: '正在准备批量评分...'
+  }, window.location.origin);
+  batchGradingResult.value = null;
+  gradingLoading.value = true;
+  try {
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      try {
+        window.parent.postMessage({
+          type: 'teacher-trial-progress',
+          completed: index,
+          total,
+          stage: `正在调用 MCP 评分服务（第 ${index + 1} / ${total} 个评分任务）...`
+        }, window.location.origin);
+        const response = await gradeBatchWithMcp({
+          subject_id: String(route.params.subjectId),
+          exam_id: String(route.params.examId),
+          local_package_id: localPackage.value?.local_package_id || String(route.params.packageId),
+          package_fingerprint: localPackage.value?.package_fingerprint,
+          quick_fingerprint: localPackage.value?.quick_fingerprint,
+          student_no_hash: localPackage.value?.student_no_hash,
+          is_trial: true,
+          mode: 'batch-trial',
+          targets: [target]
+        });
+        const batchResult = unwrapGradingApiData<BatchGradingResult>(response);
+        if (batchResult?.results?.length) {
+          const targetStudentNo = String(target.student_no || '').trim();
+          const targetAnswerFiles = Array.isArray((target as any).answer_file_names)
+            ? (target as any).answer_file_names
+            : [];
+          const subTargets = Array.isArray((target as any).sub_questions)
+            ? (target as any).sub_questions as BatchGradingSubQuestion[]
+            : [];
+          const normalizedResults = batchResult.results.map((item, itemIndex) => {
+            const itemQuestionNo = String(item.question_no || item.question_label || '').trim();
+            const subTarget = subTargets.find((candidate) => {
+              const questionNo = String(candidate.question_no || '').trim();
+              return questionNo && (
+                itemQuestionNo === questionNo
+                || String(item.key || '').includes(`__sub${questionNo}`)
+                || String(item.key || '').endsWith(`__${questionNo}`)
+              );
+            }) || (subTargets.length === batchResult.results.length ? subTargets[itemIndex] : undefined);
+            const sourceTarget = subTarget || target;
+            const targetQuestionNo = String(sourceTarget.question_no || target.question_no || '').trim();
+            // 单小题请求的题号以请求目标为准。部分评分服务会把题号回传成
+            // 父题 Q2，不能让它把 2.1/2.2 再合并回 Q2。
+            const normalizedQuestionNo = targetQuestionNo.includes('.')
+              ? targetQuestionNo
+              : (subTarget?.question_no || item.question_no || target.question_no);
+            const targetFiles = Array.isArray((sourceTarget as any).answer_file_names)
+              ? (sourceTarget as any).answer_file_names
+              : [];
+            const candidateFiles = getCandidateAnswerFileNames(
+              targetStudentNo,
+              normalizedQuestionNo || targetQuestionNo,
+              String((sourceTarget as any).question_text || target.question_text || '')
+            );
+            return {
+            ...item,
+            // 某些 MCP 或异常响应不会回传考生号/题目上下文。批量试阅是
+            // 逐目标请求的，此处用请求目标补齐，避免第二位考生的结果在
+            // 结果页按“考生号 + 题号”分组时落入空组或被合并掉。
+            key: item.key || sourceTarget.key || target.key,
+            student_no: targetStudentNo || String(item.student_no || '').trim(),
+            question_no: normalizedQuestionNo,
+            question_label: subTarget?.question_label || (targetQuestionNo.includes('.') ? `Q${targetQuestionNo}` : item.question_label || target.question_label),
+            question_text: subTarget?.question_text || (targetQuestionNo.includes('.') ? target.question_text : item.question_text || target.question_text),
+            answer_text: subTarget?.answer_text || (targetQuestionNo.includes('.') ? target.answer_text || '' : item.answer_text || target.answer_text || ''),
+            answer_file_names: Array.from(new Set([
+              ...(Array.isArray(item.answer_file_names) ? item.answer_file_names : []),
+              ...targetFiles,
+              ...(Array.isArray((subTarget as any)?.answer_files) ? (subTarget as any).answer_files : []),
+              ...candidateFiles,
+              ...(!subTargets.length ? targetAnswerFiles : [])
+            ])),
+            answer_files: (item as any).answer_files || (subTarget as any)?.answer_files || (sourceTarget as any).answer_files,
+            max_score: subTarget?.max_score ?? item.max_score ?? target.max_score
+          };
+          });
+          results.push(...normalizedResults);
+          // 后端返回了结果，但结果属于别的考生时，仍为当前目标保留一行
+          // 明确的失败信息，不能静默丢掉第二位考生。
+          if (!normalizedResults.some((item) => String(item.student_no || '').trim() === targetStudentNo)) {
+            results.push(buildTemporaryTrialFailure(target, '评分服务返回结果缺少当前考生信息'));
+          }
+        } else {
+          results.push(buildTemporaryTrialFailure(target, '评分服务没有返回结果'));
+        }
+      } catch (error: any) {
+        console.error(`考生 ${target.student_no || ''} 试阅失败`, error);
+        results.push(buildTemporaryTrialFailure(
+          target,
+          error?.response?.data?.message || error?.message || '评分请求失败'
+        ));
+      } finally {
+        // 每个考生单独计数；某一份失败也继续处理后续考生，确保进度能走到 100%。
+        window.parent.postMessage({
+          type: 'teacher-trial-progress',
+          completed: index + 1,
+          total,
+          stage: index + 1 < total
+            ? `已完成 ${index + 1} / ${total} 个评分任务，正在准备下一项...`
+            : '评分已完成，正在整理结果...'
+        }, window.location.origin);
+      }
+    }
+    batchGradingResult.value = {
+      status: results.some((item) => item.error) ? 'partial_success' : 'success',
+      mode: 'batch-trial',
+      total,
+      success_count: results.filter((item) => !item.error).length,
+      failed_count: results.filter((item) => Boolean(item.error)).length,
+      results
+    };
+    return total > 0 && results.length > 0;
+  } finally {
+    gradingLoading.value = false;
+  }
+};
+
+const buildTemporaryTrialFailure = (target: BatchGradingTarget, message: string) => ({
+  key: target.key,
+  status: 'failed',
+  student_no: target.student_no,
+  service_uuid: target.service_uuid,
+  question_no: target.question_no,
+  question_label: target.question_label,
+  question_text: target.question_text,
+  answer_text: target.answer_text,
+  answer_file_names: target.answer_file_names || [],
+  max_score: target.max_score,
+  result: null,
+  error: message
+});
+
 const saveAndStartGrading = async (): Promise<boolean> => {
   if (isBatchMode.value || (!isTrialMode.value && isPaperMode.value)) {
     return await saveAndStartBatchGrading();
@@ -2115,16 +2518,8 @@ const saveAndStartGrading = async (): Promise<boolean> => {
     ElMessage.warning('暂无待评阅内容');
     return false;
   }
-  if (!isPaperMode.value && isBackgroundSubQuestion(targetSubQuestion.value)) {
-    ElMessage.warning('该小题为题干背景资料，不是作答题目，无需评分');
-    return false;
-  }
   if (isTrialMode.value && !isPaperMode.value && !selectedStandardId.value) {
     ElMessage.warning('请先选择本题评阅标准版本');
-    return false;
-  }
-  if (isTrialMode.value && isPaperMode.value && !selectedTemplateId.value) {
-    ElMessage.warning('请先选择整卷阅卷模板');
     return false;
   }
   if (isTrialMode.value && isPaperMode.value) {
@@ -2153,7 +2548,17 @@ const saveAndStartGrading = async (): Promise<boolean> => {
       // 后端持久化图片的 blob 是空占位，需要先按 url 拉取真实内容
       imageBlob = (await ensureImageBlob(imageFile)) || imageFile.blob;
     }
-    for (const serviceUuid of serviceUuids) {
+    for (const [serviceIndex, serviceUuid] of serviceUuids.entries()) {
+      if (isTrialMode.value && autoMode.value && window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'teacher-trial-progress',
+          completed: 0,
+          total: 1,
+          stage: serviceUuids.length > 1
+            ? `正在调用第 ${serviceIndex + 1} / ${serviceUuids.length} 个 MCP 评分服务...`
+            : '正在调用 MCP 评分服务...'
+        }, window.location.origin);
+      }
       const gradingPayload: GradingPayload = {
         subject_id: String(route.params.subjectId),
         exam_id: String(route.params.examId),
@@ -2171,6 +2576,10 @@ const saveAndStartGrading = async (): Promise<boolean> => {
         student_no: currentStudent.value.student_no,
         question_text: getTargetQuestionText(),
         answer_text: getTargetAnswerText(),
+        answer_file_names: Array.from(new Set([
+          ...getQuestionAnswerFileNames(targetSubQuestion.value),
+          ...getCandidateAnswerFileNames(currentStudent.value.student_no, currentQuestionNo.value, getDisplayText(targetSubQuestion.value?.question))
+        ])),
         max_score: getTargetMaxScore(),
         ...getSelectedStandardMeta(isPaperMode.value ? undefined : currentQuestionNo.value)
       };
@@ -2285,7 +2694,7 @@ const saveAndStartGrading = async (): Promise<boolean> => {
 .grading-pane {
   min-height: 560px;
   padding: 14px;
-  border: 1px solid #ebeef5;
+  border: 0;
   border-radius: 8px;
   background: #ffffff;
   overflow: auto;
@@ -2625,8 +3034,9 @@ const saveAndStartGrading = async (): Promise<boolean> => {
 }
 
 .question-block {
-  padding: 10px 0;
-  border-top: 1px dashed #e6eef8;
+  margin: 12px 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
 }
 
 .single-question {
@@ -2634,8 +3044,22 @@ const saveAndStartGrading = async (): Promise<boolean> => {
 }
 
 .question-block summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  gap: 8px;
   cursor: pointer;
   outline: none;
+}
+
+.question-block summary .section-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .question-tag {
@@ -2649,7 +3073,87 @@ const saveAndStartGrading = async (): Promise<boolean> => {
 }
 
 .question-content {
-  padding-top: 8px;
+  padding: 0 14px 14px;
+}
+
+.question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.question-head strong {
+  flex: 1;
+  min-width: 0;
+  color: #111827;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.question-no {
+  flex: 0 0 auto;
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.answer-panel {
+  margin-top: 14px;
+  padding: 10px 0 0;
+  border-top: 0;
+}
+
+.answer-label {
+  margin-bottom: 6px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.question-card {
+  margin: 12px 0;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid #f0f2f5;
+  border-radius: 0;
+}
+
+.blank-paper-collapse {
+  --el-collapse-header-height: 48px;
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+  --el-collapse-border-color: var(--el-border-color-lighter);
+}
+
+.blank-paper-collapse :deep(.el-collapse-item__header) {
+  font-size: 14px;
+}
+
+.blank-paper-collapse .section-title {
+  overflow: hidden;
+  flex: 1;
+  margin: 0 14px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.steps {
+  margin: 10px 0 0 38px;
+  color: var(--el-text-color-secondary);
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.steps span {
+  color: var(--el-text-color-secondary);
+}
+
+.question-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .sub-title {

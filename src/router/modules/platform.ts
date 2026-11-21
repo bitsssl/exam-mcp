@@ -3,7 +3,7 @@ import type { AppRouteRecord } from '@/types/router'
 const teachersAndAdmins = ['R_USER', 'R_SUPER', 'R_ADMIN']
 const administrators = ['R_SUPER', 'R_ADMIN']
 
-/** 业务菜单保持在壳子的一级导航中；详情路由隐藏在菜单下供业务跳转使用。 */
+/** 业务菜单保持在壳子的一级导航中；详情路由隐藏在菜单下供业务跳转使用。*/
 export const platformRoutes: AppRouteRecord[] = [
   {
     path: '/user-management',
@@ -63,9 +63,20 @@ export const platformRoutes: AppRouteRecord[] = [
       {
         path: 'scoring/subjects/:subjectId/exams/:examId/packages/:packageId/results/formal',
         name: 'teacher-package-formal-results',
-        component: '/teacher/scoring/PackageDetail',
-        props: { initialDrawer: 'formal' },
+        component: '/teacher/scoring/FormalGradingResultsPage',
         meta: { title: '正式阅卷结果', isHide: true, roles: teachersAndAdmins, keepAlive: true }
+      },
+      {
+        path: 'scoring/subjects/:subjectId/exams/:examId/packages/:packageId/results/formal/completion',
+        name: 'teacher-package-formal-completion',
+        component: '/teacher/scoring/FormalGradingCompletionPage',
+        meta: { title: '评阅完成报告', isHide: true, roles: teachersAndAdmins, keepAlive: false }
+      },
+      {
+        path: 'scoring/subjects/:subjectId/exams/:examId/packages/:packageId/results/formal/students/:studentNo',
+        name: 'teacher-package-formal-student-detail',
+        component: '/teacher/scoring/FormalStudentDetailPage',
+        meta: { title: '考生评阅详情', isHide: true, roles: teachersAndAdmins, keepAlive: false }
       },
       {
         path: 'scoring/subjects/:subjectId/exams/:examId/packages/:packageId/student-compare',
@@ -88,6 +99,12 @@ export const platformRoutes: AppRouteRecord[] = [
     ]
   },
   {
+    path: '/grading-standards',
+    name: 'GradingStandardsManagement',
+    component: '/teacher/scoring/WorkflowManagementPage',
+    meta: { title: '阅卷标准管理', icon: 'ri:article-line', isFirstLevel: true, roles: teachersAndAdmins, workflowModule: 'standards', keepAlive: true }
+  },
+  {
     path: '/answers',
     name: 'AnswerManagement',
     component: '/index/index',
@@ -98,64 +115,105 @@ export const platformRoutes: AppRouteRecord[] = [
         name: 'AnswerUpload',
         component: '/teacher/answers/index',
         meta: { title: '答卷上传', icon: 'ri:upload-cloud-2-line', roles: teachersAndAdmins, keepAlive: true }
+      },
+      {
+        path: 'parse',
+        name: 'AnswerParse',
+        component: '/teacher/answers/AnswerParsePage',
+        meta: { title: '答案抽取', icon: 'ri:file-search-line', roles: teachersAndAdmins, keepAlive: true }
+      },
+      {
+        path: 'parse/:subjectId/:examId/:packageId/candidate-assignment-report',
+        name: 'answer-candidate-assignment-report',
+        component: '/teacher/answers/CandidateAssignmentReport',
+        meta: { title: '答案抽取报告', isHide: true, roles: teachersAndAdmins }
+      },
+      {
+        path: 'parse/:subjectId/:examId/:packageId/report',
+        name: 'answer-parse-report',
+        component: '/teacher/answers/ParseReportPage',
+        meta: { title: '答卷解析报告', isHide: true, roles: teachersAndAdmins }
+      },
+      {
+        path: 'upload/:subjectId/:examId/structure',
+        name: 'answer-upload-structure',
+        component: '/teacher/answers/BlankPaperStructurePage',
+        meta: { title: '试卷结构', isHide: true, roles: teachersAndAdmins }
       }
     ]
-  },
-  {
-    path: '/grading-standards',
-    name: 'GradingStandardsManagement',
-    component: '/teacher/scoring/WorkflowManagementPage',
-    meta: { title: '阅卷标准管理', icon: 'ri:article-line', isFirstLevel: true, roles: teachersAndAdmins, workflowModule: 'standards', keepAlive: true }
   },
   {
     path: '/grading-templates',
     name: 'GradingTemplatesManagement',
     component: '/teacher/scoring/WorkflowManagementPage',
-    meta: { title: '阅卷模板管理', icon: 'ri:layout-grid-line', workflowModule: 'templates', roles: teachersAndAdmins, keepAlive: true }
+    meta: { title: '阅卷模板管理', icon: 'ri:layout-grid-line', isHide: true, workflowModule: 'templates', roles: teachersAndAdmins, keepAlive: true }
   },
   {
     path: '/grading',
     name: 'GradingManagement',
     component: '/index/index',
-    redirect: '/grading/tasks',
+    redirect: '/grading/trial',
     meta: { title: '阅卷管理', icon: 'ri:edit-box-line', roles: teachersAndAdmins },
     children: [
       {
-        path: 'tasks',
-        name: 'GradingTasks',
+        path: 'trial',
+        name: 'GradingTrial',
         component: '/teacher/scoring/WorkflowManagementPage',
         meta: {
-          title: '阅卷任务',
+          title: '试阅',
           icon: 'ri:task-line',
           roles: teachersAndAdmins,
-          workflowModule: 'grading',
+          workflowModule: 'grading-trial',
           keepAlive: true
         }
       },
       {
-        path: 'trial-results',
-        name: 'GradingTrialResults',
-        component: '/teacher/scoring/GradingResultsPage',
-        props: { initialDrawer: 'trial' },
+        path: 'formal',
+        name: 'GradingFormal',
+        component: '/teacher/scoring/WorkflowManagementPage',
         meta: {
-          title: '查看试阅结果',
+          title: '评阅',
+          icon: 'ri:edit-2-line',
+          roles: teachersAndAdmins,
+          workflowModule: 'grading-formal',
+          keepAlive: true
+        }
+      },
+      {
+        path: 'results',
+        name: 'GradingResults',
+        // 查看评阅结果 = 按阅卷任务展开的分组菜单：子菜单由 MenuProcessor
+        // 在会话初始化时按阅卷任务清单动态注入（一个任务一个子菜单），
+        // 点击子菜单进入该任务的正式评阅结果页。
+        meta: {
+          title: '查看评阅结果',
           icon: 'ri:bar-chart-box-line',
           roles: teachersAndAdmins,
           keepAlive: true
-        }
+        },
+        children: []
+      },
+      {
+        // 保留旧地址供历史书签和已有跳转使用，但不再作为菜单显示。
+        path: 'tasks',
+        name: 'GradingTasks',
+        component: '/teacher/scoring/WorkflowManagementPage',
+        meta: { title: '阅卷任务', isHide: true, roles: teachersAndAdmins, workflowModule: 'grading', keepAlive: true }
+      },
+      {
+        // 试阅结果不再提供汇总页，旧地址统一回到正式评阅结果列表。
+        path: 'trial-results',
+        name: 'GradingTrialResults',
+        redirect: '/grading/results',
+        meta: { title: '查看试阅结果', isHide: true, roles: teachersAndAdmins, keepAlive: true }
       },
       {
         path: 'formal-results',
         name: 'GradingFormalResults',
         component: '/teacher/scoring/GradingResultsPage',
         props: { initialDrawer: 'formal' },
-        meta: {
-          title: '查看正式评阅结果',
-          icon: 'ri:line-chart-line',
-          roles: teachersAndAdmins,
-          keepAlive: true
-        }
-      }
+        meta: { title: '查看正式评阅结果', isHide: true, roles: teachersAndAdmins, keepAlive: true }
+      },
     ]
   },
   {
@@ -230,7 +288,7 @@ export const platformRoutes: AppRouteRecord[] = [
     path: '/profile',
     name: 'Profile',
     component: '/index/index',
-    meta: { title: '个人账户', roles: teachersAndAdmins, isHide: true },
+    meta: { title: '个人帐户', roles: teachersAndAdmins, isHide: true },
     children: [
       {
         path: 'center',

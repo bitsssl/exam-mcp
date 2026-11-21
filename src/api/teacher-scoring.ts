@@ -36,9 +36,13 @@ export interface CreateExamPayload {
   exam_time?: string;
   blank_paper?: File;
   answer_key?: File;
+  /** 后续素材服务使用的考试素材文件夹内容，当前仅负责随表单上传。 */
+  material_files?: File[];
 }
 
-export type UpdateExamPayload = CreateExamPayload;
+export type UpdateExamPayload = CreateExamPayload & {
+  remove_blank_paper?: boolean;
+};
 
 export interface ExamPackageItem {
   package_id: number | string;
@@ -54,7 +58,7 @@ export interface ExamPackageItem {
   subject_no?: string;
   subject_name?: string;
   exam_name?: string;
-  parse_state?: 'pending' | 'success' | 'failed';
+  parse_state?: 'uploaded' | 'pending' | 'success' | 'failed';
   parse_error?: string;
 }
 
@@ -116,6 +120,7 @@ export interface GradingPayload {
   student_no: string;
   question_text: string;
   answer_text?: string;
+  answer_file_names?: string[];
   max_score?: number | string | null;
   // 多服务分工评阅：按评分标准中各部分满分评分，不按题目总满分截断
   multi_service?: boolean;
@@ -141,6 +146,7 @@ export interface GradingResult {
   grading_mode?: string;
   question_text: string;
   answer_text?: string;
+  answer_file_names?: string[];
   max_score?: number | string | null;
   result: any;
   grading_record?: LocalGradingRecordItem;
@@ -155,6 +161,7 @@ export interface BatchGradingTarget {
   question_label: string;
   question_text: string;
   answer_text?: string;
+  answer_file_names?: string[];
   max_score?: number | string | null;
   // 多服务分工评阅：按评分标准中各部分满分评分，不按题目总满分截断
   multi_service?: boolean;
@@ -175,6 +182,7 @@ export interface BatchGradingSubQuestion {
   question_label?: string;
   question_text: string;
   answer_text?: string;
+  answer_file_names?: string[];
   max_score?: number | string | null;
   standard_id?: number;
   standard_version_no?: number;
@@ -242,7 +250,10 @@ export interface GradingStandardItem {
 export interface CreateGradingStandardPayload {
   standard_id?: number;
   standard_items: GradingStandardItem[];
+  /** 结构快照：新建标准时从空白卷模板完整复制、之后冻结的试卷结构 */
+  paper_structure_json?: Record<string, any>;
   remark?: string;
+  draft?: boolean;
 }
 
 export interface ExamGradingStandard {
@@ -252,6 +263,7 @@ export interface ExamGradingStandard {
   creator_id: number;
   version_no: number;
   standard_items: GradingStandardItem[];
+  paper_structure_json?: Record<string, any> | null;
   remark?: string;
   created_at?: string;
   updated_at?: string;
@@ -298,9 +310,14 @@ export interface ExamGradingTask {
   student_count: number;
   package_fingerprint?: string;
   standard_id: number;
+  standard_version_no?: number;
   template_id: number;
   template_name: string;
   template_items: GradingTemplateItem[];
+  completed_count?: number;
+  completed_student_nos?: string[];
+  trial_result_count?: number;
+  formal_result_count?: number;
   created_at?: string;
 }
 
@@ -309,7 +326,7 @@ export interface CreateExamGradingTaskPayload {
   exam_id: number | string;
   local_package_id: number | string;
   standard_id: number | string;
-  template_id: number | string;
+  template_id?: number | string;
 }
 export interface LocalPackageRegisterPayload {
   package_name: string;
@@ -373,6 +390,7 @@ export interface ProcessedLocalPackageData {
 
 export interface ParseReportSummary {
   candidateCount: number;
+  assignmentBlankCandidateCount?: number;
   blankCandidateCount: number;
   questionCount: number;
   structureSource?: string | null;
@@ -466,6 +484,8 @@ export interface LocalGradingRecordItem extends LocalGradingRecordPayload {
   exam_id: number;
   package_fingerprint: string;
   mcp_raw_json?: any;
+  /** 需人工复核：服务返回 needs_review 非空或评分失败（无分数）→ 1，否则 0 */
+  needs_manual?: number;
   graded_at?: string;
   updated_at?: string;
   round_note?: string | null;
@@ -483,6 +503,66 @@ export async function getSubjects(keyword = '') {
     params: keyword ? { keyword } : {}
   });
   return response.data;
+}
+
+export async function getTeacherSubjectAssignments(userId: number | string) {
+  const response = await api.get(`${apiPrefix}/teacher-scoring/subject-assignments`, { params: { user_id: userId } })
+  return response.data
+}
+
+export async function updateTeacherSubjectAssignments(userId: number | string, subjectIds: number[]) {
+  const response = await api.put(`${apiPrefix}/teacher-scoring/subject-assignments`, { user_id: userId, subject_ids: subjectIds })
+  return response.data
+}
+
+export async function uploadAnswerPackage(data: { subjectId: string; examId: string; packageName: string; files: File[]; folderPaths?: string[] }) {
+  const formData = new FormData()
+  formData.append('subject_id', data.subjectId)
+  formData.append('exam_id', data.examId)
+  formData.append('package_name', data.packageName)
+  if (data.folderPaths?.length) formData.append('folder_paths', JSON.stringify(data.folderPaths))
+  data.files.forEach((file) => {
+    const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    formData.append('files', file, path)
+  })
+  const response = await api.post(`${apiPrefix}/teacher-scoring/answer-uploads`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60 * 60 * 1000
+  })
+  return response.data
+}
+
+export async function getAnswerUploads() {
+  const response = await api.get(`${apiPrefix}/teacher-scoring/answer-uploads`)
+  return response.data
+}
+
+export async function deleteAnswerUpload(uploadId: number | string) {
+  const response = await api.delete(`${apiPrefix}/teacher-scoring/answer-uploads`, {
+    params: { upload_id: uploadId }
+  })
+  return response.data
+}
+
+export async function parseAnswerUpload(uploadId: number | string, payload?: { paper_structure_json?: Record<string, any> }) {
+  const response = await api.post(
+    `${apiPrefix}/teacher-scoring/answer-uploads/${uploadId}/parse`,
+    // paper_structure_json：阅卷标准结构快照（含教师新增题）。后端存在该字段时
+    // 优先于包内空白卷/答案卷作为结构来源；缺省保持原结构推断。
+    payload || {},
+    { timeout: 60 * 60 * 1000 }
+  )
+  return response.data
+}
+
+export async function extractAnswerUploadAssignments(uploadId: number | string, payload?: { paper_structure_json?: Record<string, any> }) {
+  const response = await api.post(
+    `${apiPrefix}/teacher-scoring/answer-uploads/${uploadId}/assignments`,
+    // 同 parse：题目归属抽取按阅卷标准快照的结构执行（含新增题），缺省走原规则。
+    payload || {},
+    { timeout: 60 * 60 * 1000 }
+  )
+  return response.data
 }
 
 export async function getSubject(subjectId: number | string) {
@@ -531,6 +611,7 @@ export async function createExam(subjectId: number | string, data: CreateExamPay
   if (data.answer_key) {
     formData.append('answer_key', data.answer_key);
   }
+  appendExamMaterialFiles(formData, data.material_files);
 
   const response = await api.post(
     `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams`,
@@ -564,9 +645,13 @@ export async function updateExam(
   if (data.blank_paper) {
     formData.append('blank_paper', data.blank_paper);
   }
+  if (data.remove_blank_paper) {
+    formData.append('remove_blank_paper', '1');
+  }
   if (data.answer_key) {
     formData.append('answer_key', data.answer_key);
   }
+  appendExamMaterialFiles(formData, data.material_files);
 
   const response = await api.put(
     `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}`,
@@ -578,6 +663,13 @@ export async function updateExam(
     }
   );
   return response.data;
+}
+
+function appendExamMaterialFiles(formData: FormData, files?: File[]) {
+  (files || []).forEach((file) => {
+    const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+    formData.append('material_files', file, relativePath);
+  });
 }
 
 export async function deleteExam(subjectId: number | string, examId: number | string) {
@@ -635,10 +727,16 @@ export async function getGradingStandardVersions(
 export async function deleteGradingStandard(
   subjectId: number | string,
   examId: number | string,
-  standardId: number | string
+  standardId: number | string,
+  options?: { cascade?: boolean }
 ) {
   const response = await api.delete(
-    `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/grading-standards/${standardId}`
+    `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/grading-standards/${standardId}`,
+    {
+      // cascade=true：题目被其它版本复用导致单版本无法删除时，
+      // 按考试级联删除全部标准版本（后端仍会保护有阅卷记录的版本）
+      params: options?.cascade ? { cascade: 'true' } : {}
+    }
   );
   return response.data;
 }
@@ -660,6 +758,20 @@ export async function getGradingTasks() {
 
 export async function createGradingTask(data: CreateExamGradingTaskPayload) {
   const response = await api.post(`${apiPrefix}/teacher-scoring/grading-tasks`, data);
+  return response.data;
+}
+
+export async function deleteGradingTask(taskId: number | string) {
+  const response = await api.delete(`${apiPrefix}/teacher-scoring/grading-tasks/${taskId}`)
+  return response.data
+}
+
+/** 切换阅卷任务绑定的阅卷标准：后续评分按新标准执行，已评记录保留在原标准下。 */
+export async function switchGradingTaskStandard(taskId: number | string, standardId: number | string) {
+  const response = await api.put(
+    `${apiPrefix}/teacher-scoring/grading-tasks/${taskId}`,
+    { standard_id: Number(standardId) }
+  );
   return response.data;
 }
 
@@ -805,6 +917,46 @@ export async function getLocalPackageStructure(
   return response.data as { code: number; message?: string; data: StructurePreviewResult };
 }
 
+export interface CandidateAssignmentRecord {
+  assignment_id: number;
+  local_package_id: number;
+  subject_id: number;
+  exam_id: number;
+  creator_id: number;
+  student_no: string;
+  paper_code: string;
+  assignment_source?: 'legacy_question_assignment' | 'mcp_candidate_assignment' | string;
+  assignment_json: Record<string, any>;
+  status: string;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export async function getCandidateAssignments(
+  subjectId: number | string,
+  examId: number | string,
+  localPackageId: number | string,
+  studentNo?: string
+) {
+  const response = await api.get(
+    `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/local-packages/${localPackageId}/candidate-assignments`,
+    { params: studentNo ? { student_no: studentNo } : undefined, timeout: 30000 }
+  );
+  return response.data as {
+    code: number;
+    message?: string;
+    data: {
+      local_package_id: number;
+      package_id: string;
+      package_name: string;
+      paper_code?: string | null;
+      count: number;
+      assignments: CandidateAssignmentRecord[];
+    };
+  };
+}
+
 export async function importLocalPackageReferenceAnswers(
   subjectId: number | string,
   examId: number | string,
@@ -835,18 +987,78 @@ export async function getLocalGradingRecords(
   subjectId: number | string,
   examId: number | string,
   localPackageId: number | string,
-  params: { student_no?: string; question_no?: string } = {}
+  params: { student_no?: string; question_no?: string; standard_id?: number | string; include_raw?: boolean } = {}
 ) {
+  const queryParams = {
+    ...params,
+    ...(params.include_raw === false ? { include_raw: '0' } : {})
+  }
   const response = await api.get(
     `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/local-packages/${localPackageId}/grading-records`,
     {
-      params,
+      params: queryParams,
       // 历史评分记录可能包含较大的题干、答案和 MCP 原始结果，
       // 单独放宽读取超时，避免默认 10 秒影响试卷包详情页加载。
       timeout: 30000
     }
   );
   return response.data;
+}
+
+export async function getLocalPackageResultData(
+  subjectId: number | string,
+  examId: number | string,
+  localPackageId: number | string,
+  mode: 'trial' | 'formal',
+  studentNo?: string,
+  standardId?: number | string
+) {
+  const params = {
+    mode,
+    ...(studentNo ? { student_no: studentNo } : {}),
+    ...(standardId !== undefined && standardId !== null && String(standardId) ? { standard_id: String(standardId) } : {})
+  };
+  const response = await api.get(
+    `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/local-packages/${localPackageId}/results-data`,
+    { params, timeout: 30000 }
+  );
+  return response.data as {
+    code: number;
+    message?: string;
+    data: {
+      local_package_id: number;
+      package_id: string;
+      package_name: string;
+      student_count: number;
+      template_id?: number | null;
+      template_name?: string;
+      template_items?: GradingTemplateItem[];
+      standard_id?: number | null;
+      /** 明细请求附带：该考生答题结果文件夹的绝对路径 */
+      answer_folder_path?: string;
+      blank_paper_json?: Record<string, any> | null;
+      students: Array<{ student_no: string; answer_json?: any }>;
+      records: Array<LocalGradingRecordItem & {
+        question_text?: string | null;
+        answer_text?: string | null;
+        image_name?: string | null;
+      }>;
+    };
+  };
+}
+
+export async function openStudentAnswerFolder(
+  subjectId: number | string,
+  examId: number | string,
+  localPackageId: number | string,
+  studentNo: string
+) {
+  const response = await api.post(
+    `${apiPrefix}/teacher-scoring/subjects/${subjectId}/exams/${examId}/local-packages/${localPackageId}/open-answer-folder`,
+    null,
+    { params: { student_no: studentNo } }
+  );
+  return response.data as { code: number; message?: string; data?: { path: string } };
 }
 
 export async function updateLocalGradingRound(
@@ -1012,6 +1224,7 @@ export async function gradeWithMcp(data: GradingPayload) {
   if (data.answer_text) {
     formData.append('answer_text', data.answer_text);
   }
+  (data.answer_file_names || []).forEach((fileName) => formData.append('answer_file_names', fileName));
   if (data.max_score !== undefined && data.max_score !== null && data.max_score !== '') {
     formData.append('max_score', String(data.max_score));
   }
@@ -1058,6 +1271,7 @@ export async function gradeBatchWithMcp(data: BatchGradingPayload) {
       question_label: target.question_label,
       question_text: target.question_text,
       answer_text: target.answer_text || '',
+      answer_file_names: target.answer_file_names || [],
       max_score: target.max_score,
       multi_service: target.multi_service || false,
       standard_id: target.standard_id,

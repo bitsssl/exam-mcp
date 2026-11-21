@@ -1895,12 +1895,12 @@ onMounted(() => {
 .mcp-services-container { padding: 0; margin: 0; min-height: auto; background: transparent; }
 .page-header { margin: 0 0 16px; padding: 16px 20px; border: 1px solid var(--el-border-color-light); border-radius: 8px; background: var(--el-bg-color); box-shadow: none; backdrop-filter: none; }
 .page-header::before { display: none; }
-.header-content { align-items: center; gap: 20px; }
+.header-content { align-items: stretch; flex-direction: column; gap: 16px; }
 .service-page-intro { flex: 0 0 auto; min-width: 220px; }
 .service-page-intro h1 { margin: 0; color: var(--el-text-color-primary); font-size: 20px; font-weight: 600; }
 .service-page-intro p { margin: 5px 0 0; color: var(--el-text-color-secondary); font-size: 14px; }
-.header-actions { flex: 1; min-width: 0; align-items: center; gap: 12px; }
-.search-section { gap: 8px; }
+.header-actions { width: 100%; min-width: 0; align-items: center; justify-content: flex-start; gap: 12px; }
+.search-section { gap: 8px; justify-content: flex-start; }
 .search-input :deep(.el-input__wrapper), .filter-select :deep(.el-select__wrapper) { border-radius: 4px; border: 0; box-shadow: 0 0 0 1px var(--el-border-color) inset; }
 .search-input :deep(.el-input__wrapper:hover), .filter-select :deep(.el-select__wrapper:hover) { border: 0; box-shadow: 0 0 0 1px var(--el-border-color-hover) inset; }
 .filter-select { width: 160px; }

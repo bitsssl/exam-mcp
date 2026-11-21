@@ -37,7 +37,7 @@
         >
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
           <div class="el-upload__text">拖拽答卷压缩包到此处，或 <em>点击选择文件</em></div>
-          <template #tip><div class="el-upload__tip">支持 ZIP 格式；系统会使用原有规则解析压缩包内容。</div></template>
+          <template #tip><div class="el-upload__tip">支持 ZIP 格式；新增后系统会自动解析试卷数量和空白试卷考生号。</div></template>
         </el-upload>
         <div v-else class="folder-picker">
           <el-button @click="chooseFolder">选择文件夹</el-button>
@@ -51,24 +51,10 @@
             multiple
             @change="onFolderChange"
           />
-          <div class="el-upload__tip">选择包含考生答卷、JSON、图片等文件的文件夹，系统按原有规则解析。</div>
+          <div class="el-upload__tip">选择包含考生答卷、JSON、图片等文件的文件夹，新增后系统会自动解析试卷数量和空白试卷考生号。</div>
         </div>
       </el-form-item>
-      <el-form-item label="空白试卷（可选）">
-        <el-upload
-          :auto-upload="false"
-          :limit="1"
-          :on-change="onBlankPaperChange"
-          :on-remove="onBlankPaperRemove"
-          :file-list="blankPaperFileList"
-        >
-          <el-button>选择空白试卷</el-button>
-          <template #tip>
-            <div class="el-upload__tip">考试中未存在的试卷文件时，可单独上传空白试卷模板。</div>
-          </template>
-        </el-upload>
-      </el-form-item>
-      <el-alert type="info" :closable="false" show-icon title="此处上传考生试卷包及可选的空白试卷模板。评分标准与阅卷模板请在对应的阅卷管理菜单维护。" />
+      <el-alert type="info" :closable="false" show-icon title="答卷上传后会自动解析试卷数量、空白试卷数量和考生号；题目归属抽取请前往“答案抽取”菜单手动启动。空白试卷请在考试管理中上传。" />
     </el-form>
     <template #footer>
       <div class="drawer-footer">
@@ -106,8 +92,6 @@ const folderInputRef = ref<HTMLInputElement>()
 const folderFiles = ref<File[]>([])
 const folderPaths = ref<string[]>([])
 const folderLabel = ref('未选择文件夹')
-const blankPaperFile = ref<File>()
-const blankPaperFileList = ref<UploadUserFile[]>([])
 const hasPackageContent = computed(() => uploadMode.value === 'archive' ? Boolean(archiveFile.value) : folderFiles.value.length > 0)
 const activeStep = computed(() => hasPackageContent.value ? 2 : examId.value ? 2 : subjectId.value ? 1 : 0)
 const canSubmit = computed(() => Boolean(subjectId.value && examId.value && packageName.value.trim() && hasPackageContent.value))
@@ -216,22 +200,11 @@ async function chooseFolder() {
   }
 }
 
-function onBlankPaperChange(uploadFile: UploadFile) {
-  if (!uploadFile.raw) return
-  blankPaperFile.value = uploadFile.raw
-  blankPaperFileList.value = [uploadFile]
-}
-
-function onBlankPaperRemove() {
-  blankPaperFile.value = undefined
-  blankPaperFileList.value = []
-}
-
 function reset() {
   subjectId.value = undefined; examId.value = undefined; packageName.value = ''; archiveFile.value = undefined
   uploadMode.value = 'archive'; archiveFileList.value = []; folderFiles.value = []; folderPaths.value = []; folderLabel.value = '未选择文件夹'
   if (folderInputRef.value) folderInputRef.value.value = ''
-  blankPaperFile.value = undefined; blankPaperFileList.value = []; exams.value = []
+  exams.value = []
 }
 
 async function submit() {
@@ -246,7 +219,6 @@ async function submit() {
     packageName: packageName.value.trim(),
     files,
     folderPaths: paths,
-    blankPaper: blankPaperFile.value,
     subjectName: subject?.subject_name || '',
     subjectNo: subject?.subject_no || '',
     examName: exam?.exam_name || ''

@@ -140,7 +140,7 @@ export const useUserStore = defineStore(
      * 清空所有用户相关状态并跳转到登录页
      * 如果是同一账号重新登录，保留工作台标签页
      */
-    const logOut = () => {
+    const logOut = (shouldRedirect = true) => {
       // 保存当前用户 ID，用于下次登录时判断是否为同一用户
       const currentUserId = info.value.userId
       if (currentUserId) {
@@ -166,7 +166,10 @@ export const useUserStore = defineStore(
       useMenuStore().setHomePath('')
       // 重置路由状态
       resetRouterState(500)
-      // 跳转到登录页，携带当前路由作为 redirect 参数
+      // 跳转到登录页，携带当前路由作为 redirect 参数。路由守卫处理
+      // 初始化阶段的401时会关闭自动跳转，由守卫统一完成导航，避免
+      // 在同一次导航中调用 router.push 导致登录页跳转被取消。
+      if (!shouldRedirect) return
       const currentRoute = router.currentRoute.value
       const redirect = currentRoute.path !== '/login' ? currentRoute.fullPath : undefined
       router.push({

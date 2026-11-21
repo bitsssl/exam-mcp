@@ -346,7 +346,15 @@ async function handleDynamicRoutes(
     if (isUnauthorizedError(error)) {
       // 重置状态，允许重新登录后再次初始化
       routeInitInProgress = false
-      next(false)
+      routeInitFailed = false
+      // 初始化期间旧 JWT 失效时，axios 拦截器可能已清理状态但当前
+      // 导航仍在等待接口结果；显式结束到登录页，避免停留在空白页。
+      useUserStore().logOut(false)
+      next({
+        name: 'Login',
+        query: to.path !== RoutesAlias.Login ? { redirect: to.fullPath } : undefined,
+        replace: true
+      })
       return
     }
 
