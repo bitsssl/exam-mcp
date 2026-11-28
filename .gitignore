@@ -16,3 +16,4 @@ src/types/import/components.d.ts
 
 # Local-only docs
 /docs/数据库设计文档.md
+/docs/正式评阅结果-导出JSON字段说明.md
