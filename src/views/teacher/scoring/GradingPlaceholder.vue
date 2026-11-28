@@ -11,7 +11,10 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>{{ title }}</span>
+          <div class="card-header-main">
+            <span>{{ title }}</span>
+            <ScoringContextLine :subject-id="localPackage?.subject_id" :exam-id="localPackage?.exam_id" :package-id="String(route.params.packageId || '')" :package-name="localPackage?.package_name" />
+          </div>
           <el-button @click="goBack">返回</el-button>
         </div>
       </template>
@@ -133,6 +136,7 @@
               <el-button type="primary" :loading="gradingLoading" @click="saveAndStartGrading">
                 {{ isTrialMode ? '保存并试阅' : '保存并评阅' }}
               </el-button>
+              <div v-if="batchProgressText" class="batch-progress-text">{{ batchProgressText }}</div>
             </div>
           </div>
           <div v-else class="trial-workbench batch-trial-workbench" v-loading="standardLoading">
@@ -221,6 +225,7 @@
               <el-button type="primary" :loading="gradingLoading" @click="saveAndStartGrading">
                 {{ isTrialMode ? '保存并试阅' : '保存并评阅' }}
               </el-button>
+              <div v-if="batchProgressText" class="batch-progress-text">{{ batchProgressText }}</div>
             </div>
           </div>
           <el-empty v-if="!isBatchMode && !currentStudent" description="暂无待评阅内容" />
@@ -239,7 +244,14 @@
                     <div class="question-head"><span class="question-no">{{ target.label }}</span><strong>{{ getDisplayText(getBatchDisplaySubQuestion(target)?.question) || '未命名题目' }}</strong></div>
                     <div class="answer-panel">
                       <div class="answer-label">考生答案</div>
-                      <RichImageContent :text="getQuestionAnswerText(getBatchDisplaySubQuestion(target))" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <div v-if="extractionAnswerRowsFor(target.student.student_no, getBatchQuestionNo(target)).rows.length" class="answer-text-box">
+                        <div v-for="(row, rowIndex) in extractionAnswerRowsFor(target.student.student_no, getBatchQuestionNo(target)).rows" :key="rowIndex" class="answer-text-line">
+                          <span class="answer-text-desc">{{ row.field }}</span>
+                          <span class="answer-text-content">{{ row.value }}</span>
+                        </div>
+                        <div v-if="extractionAnswerRowsFor(target.student.student_no, getBatchQuestionNo(target)).source" class="answer-text-source">来源：{{ extractionAnswerRowsFor(target.student.student_no, getBatchQuestionNo(target)).source }}</div>
+                      </div>
+                      <RichImageContent v-else :text="getQuestionAnswerText(getBatchDisplaySubQuestion(target))" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
                       <ImageList :images="getBatchDisplaySubQuestion(target)?.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
                     </div>
                   </div>
@@ -296,7 +308,14 @@
                     <div v-if="getStandaloneQuestionImages(topic).length" class="question-images"><el-tag v-for="image in getStandaloneQuestionImages(topic)" :key="image" size="small" type="info">参考图片：{{ image.split('/').pop() }}</el-tag></div>
                     <div class="answer-panel">
                       <div class="answer-label">考生答案</div>
-                      <RichImageContent :text="getQuestionAnswerText(topic)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', String(topicIndex + 1)).rows.length" class="answer-text-box">
+                        <div v-for="(row, rowIndex) in extractionAnswerRowsFor(displayStudent?.student_no || '', String(topicIndex + 1)).rows" :key="rowIndex" class="answer-text-line">
+                          <span class="answer-text-desc">{{ row.field }}</span>
+                          <span class="answer-text-content">{{ row.value }}</span>
+                        </div>
+                        <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', String(topicIndex + 1)).source" class="answer-text-source">来源：{{ extractionAnswerRowsFor(displayStudent?.student_no || '', String(topicIndex + 1)).source }}</div>
+                      </div>
+                      <RichImageContent v-else :text="getQuestionAnswerText(topic)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
                       <ImageList :images="topic.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
                     </div>
                   </div>
@@ -310,7 +329,14 @@
                     <div v-if="getStandaloneQuestionImages(subQuestion).length" class="question-images"><el-tag v-for="image in getStandaloneQuestionImages(subQuestion)" :key="image" size="small" type="info">参考图片：{{ image.split('/').pop() }}</el-tag></div>
                     <div class="answer-panel">
                       <div class="answer-label">考生答案</div>
-                      <RichImageContent :text="getQuestionAnswerText(subQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                      <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', `${topicIndex + 1}.${subIndex + 1}`).rows.length" class="answer-text-box">
+                        <div v-for="(row, rowIndex) in extractionAnswerRowsFor(displayStudent?.student_no || '', `${topicIndex + 1}.${subIndex + 1}`).rows" :key="rowIndex" class="answer-text-line">
+                          <span class="answer-text-desc">{{ row.field }}</span>
+                          <span class="answer-text-content">{{ row.value }}</span>
+                        </div>
+                        <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', `${topicIndex + 1}.${subIndex + 1}`).source" class="answer-text-source">来源：{{ extractionAnswerRowsFor(displayStudent?.student_no || '', `${topicIndex + 1}.${subIndex + 1}`).source }}</div>
+                      </div>
+                      <RichImageContent v-else :text="getQuestionAnswerText(subQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
                       <ImageList :images="subQuestion.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
                     </div>
                   </div>
@@ -326,7 +352,14 @@
                 <ImageList :images="getStandaloneQuestionImages(displayTargetSubQuestion)" :resolve="resolveImageUrl" @preview="previewImage" />
                 <div class="answer-panel">
                   <div class="answer-label">考生答案</div>
-                  <RichImageContent :text="getQuestionAnswerText(displayTargetSubQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
+                  <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', currentQuestionNo).rows.length" class="answer-text-box">
+                    <div v-for="(row, rowIndex) in extractionAnswerRowsFor(displayStudent?.student_no || '', currentQuestionNo).rows" :key="rowIndex" class="answer-text-line">
+                      <span class="answer-text-desc">{{ row.field }}</span>
+                      <span class="answer-text-content">{{ row.value }}</span>
+                    </div>
+                    <div v-if="extractionAnswerRowsFor(displayStudent?.student_no || '', currentQuestionNo).source" class="answer-text-source">来源：{{ extractionAnswerRowsFor(displayStudent?.student_no || '', currentQuestionNo).source }}</div>
+                  </div>
+                  <RichImageContent v-else :text="getQuestionAnswerText(displayTargetSubQuestion)" text-class="answer-text" :resolve="resolveImageUrl" @preview="previewImage" />
                   <ImageList :images="displayTargetSubQuestion?.answer_images || []" :resolve="resolveImageUrl" @preview="previewImage" />
                 </div>
                 </div>
@@ -355,7 +388,7 @@ import { ElMessage } from 'element-plus';
 import { ArrowLeft, ArrowRight, CircleCheck, Loading } from '@element-plus/icons-vue';
 import { listServices } from '@/api/mcp';
 import type { McpServiceInfo } from '@/types/marketplace';
-import { getCandidateAssignments, getGradingStandardVersions, getGradingTemplates, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, gradeBatchWithMcp, gradeWithMcp, type BatchGradingResult, type BatchGradingSubQuestion, type BatchGradingTarget, type CandidateAssignmentRecord, type ExamGradingStandard, type ExamGradingTemplate, type GradingPayload, type GradingResult, type GradingStandardItem, type GradingTemplateItem, type LocalGradingRecordItem, type StudentQuestionJson, type StudentSubQuestionJson } from '@/api/teacher-scoring';
+import { getCandidateAssignments, getGradingStandardVersions, getGradingTemplates, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, gradeBatchWithMcp, gradeBatchWithMcpAsync, gradeWithMcp, type BatchGradingResult, type BatchGradingSubQuestion, type BatchGradingTarget, type CandidateAssignmentRecord, type ExamGradingStandard, type ExamGradingTemplate, type GradingPayload, type GradingResult, type GradingStandardItem, type GradingTemplateItem, type LocalGradingRecordItem, type StudentQuestionJson, type StudentSubQuestionJson } from '@/api/teacher-scoring';
 import {
   buildImageResolver,
   calculateTotalScore,
@@ -372,7 +405,8 @@ import {
 } from '@/utils/local-scoring-package';
 import { buildBlankPaperQuestions } from '@/utils/blank-paper-display';
 import { findStandardPaperStructure, loadLatestStandardStructure } from '@/utils/paper-structure';
-import { getAssignmentFileNames, orderAssignmentFields } from '@/utils/assignment-files';
+import { getAssignmentFileNames, getAssignmentQuestionContent, orderAssignmentFields } from '@/utils/assignment-files';
+import ScoringContextLine from '@/components/ScoringContextLine.vue';
 
 const ImageList = defineComponent({
   props: {
@@ -456,6 +490,8 @@ const mcpLoading = ref(false);
 const mcpLoadError = ref('');
 const mcpServices = ref<McpServiceInfo[]>([]);
 const gradingLoading = ref(false);
+// 批量评阅的并发进度文本（后端线程池按“题 × 考生”并发执行，前端轮询展示）
+const batchProgressText = ref('');
 const gradingResult = ref<GradingResult | null>(null);
 // 多选 MCP：按服务逐个调用的结果列表
 const gradingResults = ref<GradingResult[]>([]);
@@ -1248,8 +1284,8 @@ onMounted(async () => {
           question_no: item.question_no || currentQuestionNo.value,
           question_label: item.question_label || `Q${currentQuestionNo.value}`,
           question_text: item.question_text || getTargetQuestionText(),
-          answer_text: item.answer_text || (hasExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') ? getExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') : getTargetAnswerText()),
-          answer_file_names: hasExtractionAnswerText(item.student_no || currentStudent.value?.student_no || '') ? [] : (item.answer_file_names || Array.from(new Set([
+          answer_text: item.answer_text || (hasExtractionAnswerTextForQuestion(item.student_no || currentStudent.value?.student_no || '', item.question_no || currentQuestionNo.value) ? getExtractionAnswerTextForQuestion(item.student_no || currentStudent.value?.student_no || '', item.question_no || currentQuestionNo.value) : getTargetAnswerText()),
+          answer_file_names: hasExtractionAnswerTextForQuestion(item.student_no || currentStudent.value?.student_no || '', item.question_no || currentQuestionNo.value) ? [] : (item.answer_file_names || Array.from(new Set([
             ...getQuestionAnswerFileNames(targetSubQuestion.value),
             ...getCandidateAnswerFileNames(item.student_no || currentStudent.value?.student_no || '', item.question_no || currentQuestionNo.value, getDisplayText(targetSubQuestion.value?.question))
           ]))),
@@ -1442,18 +1478,39 @@ const getCandidateAnswerFileNames = (studentNo: string, questionNo: string, ques
   return getAssignmentFileNames(assignment, questionNo, questionText);
 };
 
-// 11 系等纯文本题：考生作答在归属抽取内容里（"字段：值"逐行）。有抽取
-// 内容时，评分记录不再把答卷文档转换文本与杂项文件（如 tctest 数据库
-// 备份）当考生答案/答案文件传出去。
-const getExtractionAnswerText = (studentNo: string): string => {
+// 11 系等纯文本题：考生作答在归属抽取内容里（"字段：值"逐行）。按**题号**
+// 取该题自己的抽取字段（questionContents 按题挂靠）。不能用考生级
+// extractedContent——多题科目里它只装了一道题的字段，所有题共用会把
+// 别的题答案当成本题答案评分（Word 题评到 Excel 题答案、反之亦然）。
+// 有本题抽取内容时，评分记录不再把答卷文档转换文本与杂项文件（如
+// tctest 数据库备份）当考生答案/答案文件传出去。
+const getExtractionAnswerTextForQuestion = (studentNo: string, questionNo: string): string => {
   const key = String(studentNo || '').trim();
   const assignment = candidateAssignmentMap.value[key]
     || Object.entries(candidateAssignmentMap.value).find(([entryKey]) => entryKey.trim() === key)?.[1];
-  const fields = (((assignment as any)?.assignment_json?.student?.extractedContent?.fields || {}) as Record<string, string>);
+  const entry = getAssignmentQuestionContent(assignment, questionNo);
+  const fields = ((entry?.fields || {}) as Record<string, string>);
   return orderAssignmentFields(fields).map(({ field, value }) => `${field}：${value}`).join('\n');
 };
-const hasExtractionAnswerText = (studentNo: string): boolean => Boolean(getExtractionAnswerText(studentNo).trim());
+const hasExtractionAnswerTextForQuestion = (studentNo: string, questionNo: string): boolean =>
+  Boolean(getExtractionAnswerTextForQuestion(studentNo, questionNo).trim());
 
+// 考生答案展示（与考生评阅详情页同款大框样式）：按题号取该题自己的抽取字段，
+// 说明列在前；没有抽取字段时回退答卷文档转换文本（RichImageContent 分支）。
+const extractionAnswerRowsFor = (studentNo: string, questionNo: string) => {
+  const key = String(studentNo || '').trim();
+  const assignment = candidateAssignmentMap.value[key]
+    || Object.entries(candidateAssignmentMap.value).find(([entryKey]) => entryKey.trim() === key)?.[1];
+  const entry = getAssignmentQuestionContent(assignment, questionNo);
+  const fields = (entry?.fields || {}) as Record<string, string>;
+  return {
+    rows: orderAssignmentFields(fields).map(({ field, value }) => ({ field, value: String(value) })),
+    source: String(entry?.sourceFile || '').trim(),
+    sourceType: String(entry?.sourceType || '').trim(),
+  };
+};
+
+const candidateAssignmentLoaded = ref(false);
 const loadCandidateAssignmentResults = async () => {
   const localId = localPackage.value?.local_package_id || String(route.params.packageId || '').replace(/^local_/, '');
   if (!localId || !/^\d+$/.test(String(localId))) return;
@@ -1469,6 +1526,8 @@ const loadCandidateAssignmentResults = async () => {
   } catch (error) {
     console.warn('读取答案抽取结果失败，试阅结果页将显示传统答案文本', error);
     candidateAssignmentMap.value = {};
+  } finally {
+    candidateAssignmentLoaded.value = true;
   }
 };
 
@@ -2106,21 +2165,6 @@ const buildMajorBatchGroups = (sourceTargets: BatchTargetView[]): MajorBatchGrou
     const serviceUuids = getEffectiveMcpListForTarget(target, questionNo);
     serviceUuids.forEach((serviceUuid) => {
       const singleKey = `${target.student.student_no}__topic${target.topicIndex + 1}__sub${target.subIndex}__svc${serviceUuid}`;
-      // 小题目标一律按小题独立分组调用（正式/试评一致）：按小题评分的
-      // 服务各自出分、各自保存记录（如 4.1/4.2 分别评分、各有自己的
-      // review_summary），不再合并成大题整题调用。仅无小题的大题级
-      // 目标（subIndex < 0）保留整题分组。
-      if (target.subIndex >= 0) {
-        groupMap.set(singleKey, {
-          key: singleKey,
-          student: target.student,
-          topicIndex: target.topicIndex,
-          serviceUuid,
-          targets: [target],
-          serviceCount: serviceUuids.length
-        });
-        return;
-      }
       // module: 前缀的裸模块（如 SQL 单题评分器）一次只能评一道题，
       // 不能按大题合并调用，需按小题独立分组
       const isSingleQuestionService = String(serviceUuid).startsWith('module:');
@@ -2246,8 +2290,8 @@ const buildBatchPayloadTargets = async () => {
         student_no: group.student.student_no,
         question_label: target.label,
         question_text: buildQuestionTextWithStandard(getBatchQuestionText(target), questionNo),
-        answer_text: hasExtractionAnswerText(group.student.student_no) ? getExtractionAnswerText(group.student.student_no) : getBatchAnswerText(target),
-        answer_file_names: hasExtractionAnswerText(group.student.student_no) ? [] : Array.from(new Set([
+        answer_text: hasExtractionAnswerTextForQuestion(group.student.student_no, questionNo) ? getExtractionAnswerTextForQuestion(group.student.student_no, questionNo) : getBatchAnswerText(target),
+        answer_file_names: hasExtractionAnswerTextForQuestion(group.student.student_no, questionNo) ? [] : Array.from(new Set([
           ...getQuestionAnswerFileNames(subNode),
           ...getCandidateAnswerFileNames(target.student.student_no, questionNo, getDisplayText(subNode?.question))
         ])),
@@ -2270,8 +2314,8 @@ const buildBatchPayloadTargets = async () => {
           question_no: questionNo,
           question_label: target.label,
           question_text: buildQuestionTextWithStandard(getBatchQuestionText(target), questionNo),
-          answer_text: hasExtractionAnswerText(group.student.student_no) ? getExtractionAnswerText(group.student.student_no) : getBatchAnswerText(target),
-          answer_file_names: hasExtractionAnswerText(group.student.student_no) ? [] : Array.from(new Set([
+          answer_text: hasExtractionAnswerTextForQuestion(group.student.student_no, questionNo) ? getExtractionAnswerTextForQuestion(group.student.student_no, questionNo) : getBatchAnswerText(target),
+          answer_file_names: hasExtractionAnswerTextForQuestion(group.student.student_no, questionNo) ? [] : Array.from(new Set([
             ...getQuestionAnswerFileNames(getBatchSubQuestion(target)),
             ...getCandidateAnswerFileNames(target.student.student_no, questionNo, getDisplayText(getBatchSubQuestion(target)?.question))
           ])),
@@ -2305,6 +2349,11 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
     ElMessage.warning(isPaperMode.value ? '暂无整卷评阅内容，请先配置阅卷标准' : '暂无批量评阅内容，请先选择题目');
     return false;
   }
+  // 归属数据是页面挂载时异步拉的：评分发起前确保它已就绪，否则结果行
+  // 取不到「答案结果文件」（小题行的文件清单从归属档案按题取）
+  if (!candidateAssignmentLoaded.value) {
+    await loadCandidateAssignmentResults();
+  }
   const payloadTargets = await buildBatchPayloadTargets();
   const batchTargets = activeBatchTargets.value;
   const missingMcp = batchTargets.filter((target) => !getMajorEffectiveMcpValue(target, getBatchQuestionNo(target)));
@@ -2318,8 +2367,20 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
   gradingLoading.value = true;
   gradingResult.value = null;
   batchGradingResult.value = null;
+  batchProgressText.value = '';
+  // 嵌入详情页（进入评阅/试阅的进度弹窗）时向父页面同步进度，
+  // 驱动外层进度条按“题 × 考生”评分任务实时走动
+  const notifyParentProgress = (completed: number, total: number, stage: string) => {
+    if (window.parent === window) return;
+    window.parent.postMessage({ type: 'teacher-trial-progress', completed, total, stage }, window.location.origin);
+  };
+  // 进度按考生粒度上报：一个考生的全部评分单元完成才算“已完成 1 位考生”
+  const studentTotalCount = new Set(
+    batchTargets.map((target) => String(target.student?.student_no || '').trim()).filter(Boolean)
+  ).size;
+  notifyParentProgress(0, studentTotalCount, '正在调用 MCP 评分服务...');
   try {
-    const response = await gradeBatchWithMcp({
+    const response = await gradeBatchWithMcpAsync({
       subject_id: String(route.params.subjectId),
       exam_id: String(route.params.examId),
       local_package_id: localPackage.value?.local_package_id || String(route.params.packageId),
@@ -2329,6 +2390,13 @@ const saveAndStartBatchGrading = async (): Promise<boolean> => {
       is_trial: isTrialMode.value,
       mode: mode.value,
       targets: payloadTargets.filter(Boolean) as BatchGradingTarget[]
+    }, (progress) => {
+      // 后端线程池按“题 × 考生”并发评分，每完成一题立即落库；这里轮询展示进度
+      const stageText = `并发评分进度：${progress.completed}/${progress.total}${progress.failed_count ? `（失败 ${progress.failed_count}）` : ''}`;
+      batchProgressText.value = stageText;
+      const studentCompleted = Number((progress as any).completed_students ?? 0);
+      const studentTotal = Number((progress as any).total_students ?? 0) || studentTotalCount;
+      notifyParentProgress(studentCompleted, studentTotal, stageText);
     });
     const batchResult = unwrapGradingApiData<BatchGradingResult>(response);
     batchGradingResult.value = batchResult || null;
@@ -2442,14 +2510,19 @@ const runTemporaryTrialBatch = async (targets: BatchGradingTarget[]): Promise<bo
             question_no: normalizedQuestionNo,
             question_label: subTarget?.question_label || (targetQuestionNo.includes('.') ? `Q${targetQuestionNo}` : item.question_label || target.question_label),
             question_text: subTarget?.question_text || (targetQuestionNo.includes('.') ? target.question_text : item.question_text || target.question_text),
-            answer_text: subTarget?.answer_text || (targetQuestionNo.includes('.') ? target.answer_text || '' : item.answer_text || target.answer_text || ''),
-            answer_file_names: Array.from(new Set([
-              ...(Array.isArray(item.answer_file_names) ? item.answer_file_names : []),
-              ...targetFiles,
-              ...(Array.isArray((subTarget as any)?.answer_files) ? (subTarget as any).answer_files : []),
-              ...candidateFiles,
-              ...(!subTargets.length ? targetAnswerFiles : [])
-            ])),
+            // 小题行只取该小题自己的作答文本与归属文件：大题级拼装的答案
+            // 文本（含各小题标签）和全量文件清单不能串到每道小题的展示里
+            answer_text: subTarget?.answer_text || '',
+            answer_file_names: Array.from(new Set(
+              (normalizedQuestionNo || '').includes('.')
+                ? [...candidateFiles]
+                : [
+                    ...(Array.isArray(item.answer_file_names) ? item.answer_file_names : []),
+                    ...targetFiles,
+                    ...candidateFiles,
+                    ...(!subTargets.length ? targetAnswerFiles : [])
+                  ]
+            )),
             answer_files: (item as any).answer_files || (subTarget as any)?.answer_files || (sourceTarget as any).answer_files,
             max_score: subTarget?.max_score ?? item.max_score ?? target.max_score
           };
@@ -2985,6 +3058,11 @@ const saveAndStartGrading = async (): Promise<boolean> => {
   padding-top: 12px;
   border-top: 1px solid #f3d19e;
 }
+.batch-progress-text {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
 
 .trial-action-bar > div {
   display: none;
@@ -3108,6 +3186,46 @@ const saveAndStartGrading = async (): Promise<boolean> => {
   color: #374151;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* 考生答案抽取字段大框（与考生评阅详情页同款样式） */
+.answer-text-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.answer-text-line {
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-desc {
+  color: #354861;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.answer-text-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-source {
+  color: #8b97a8;
+  font-size: 12px;
+}
+
+.card-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .question-card {

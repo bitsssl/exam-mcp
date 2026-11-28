@@ -1,6 +1,6 @@
 <template>
-  <article class="metric-stat-card" :class="`metric-stat-card--${tone}`">
-    <div class="metric-stat-icon"><el-icon><component :is="icon" /></el-icon></div>
+  <article class="metric-stat-card" :class="[`metric-stat-card--${tone}`, { 'metric-stat-card--stacked': stacked }]">
+    <div v-if="!stacked" class="metric-stat-icon"><el-icon><component :is="icon" /></el-icon></div>
     <div class="metric-stat-content">
       <span>{{ label }}</span>
       <strong>{{ value }}</strong>
@@ -14,10 +14,13 @@ import type { Component } from 'vue'
 withDefaults(defineProps<{
   label: string
   value: string | number
-  icon: Component
+  icon?: Component
   tone?: 'primary' | 'warning' | 'success' | 'info'
+  /** 上下排布变体：不显示图标，标签在上、数值在下 */
+  stacked?: boolean
 }>(), {
-  tone: 'primary'
+  tone: 'primary',
+  stacked: false
 })
 </script>
 
@@ -33,4 +36,6 @@ withDefaults(defineProps<{
 .metric-stat-content { display: flex; align-items: baseline; justify-content: space-between; flex: 1; gap: 12px; min-width: 0; }
 .metric-stat-content span { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
 .metric-stat-content strong { overflow: hidden; color: var(--el-text-color-primary); font-size: 26px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.metric-stat-card--stacked { min-height: 0; }
+.metric-stat-card--stacked .metric-stat-content { flex-direction: column; align-items: flex-start; gap: 6px; }
 </style>

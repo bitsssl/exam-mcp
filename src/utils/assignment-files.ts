@@ -142,6 +142,36 @@ export const getAssignmentTextRows = (assignment: AssignmentRecord): AssignmentT
   return getFieldsTextRows(extracted.fields, extracted.sourceFile, extracted.sourceType)
 }
 
+/**
+ * 按题号取该题自己的抽取内容（questionContents 按题挂靠，含来源文件）。
+ * extractedContent 是考生级单套字段：多题科目里只装了一道题的内容，
+ * 各题共用会把别的题答案当成自己的（Word 题显示/评阅到 Excel 题答案）。
+ * 匹配顺序：题号精确 → 小题回退父大题号（归属按大题挂靠时 1.1 → 1）。
+ */
+export const getAssignmentQuestionContent = (assignment: AssignmentRecord | null | undefined, questionNo: any) => {
+  const student = ((assignment as any)?.assignment_json?.student || {}) as any
+  const target = getAssignmentQuestionNo(questionNo)
+  if (!target) return null
+  const entries = (student.questionContents || []) as any[]
+  const exact = entries.find((entry) => getAssignmentQuestionNo(entry?.questionNo) === target)
+  if (exact) return exact
+  if (target.includes('.')) {
+    const major = target.split('.')[0]
+    return entries.find((entry) => getAssignmentQuestionNo(entry?.questionNo) === major) || null
+  }
+  return null
+}
+
+/** 指定题号的抽取内容行：只取该题自己的 fields（无则返回空，展示"无"）。 */
+export const getAssignmentTextRowsForQuestion = (
+  assignment: AssignmentRecord | null | undefined,
+  questionNo: any
+): AssignmentTextRow[] => {
+  const entry = getAssignmentQuestionContent(assignment, questionNo)
+  if (!entry) return []
+  return getFieldsTextRows(entry.fields || {}, entry.sourceFile, entry.sourceType)
+}
+
 /** 指定字段集的抽取内容行（按题展示用：每道题的 fields + 来源文档）。 */
 export const getFieldsTextRows = (
   fields: Record<string, any> | null | undefined,

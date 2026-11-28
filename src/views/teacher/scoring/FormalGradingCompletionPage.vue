@@ -3,8 +3,7 @@
     <section class="completion-panel">
       <div class="completion-header">
         <div>
-          <h1>评阅完成报告</h1>
-          <p>本次整卷评阅已完成，以下是本次评阅的考生、异常情况和转人工情况。</p>
+          <h1>评阅完成报告<span v-if="contextScopeLabel" class="header-context-scope">（{{ contextScopeLabel }}）</span></h1>
         </div>
         <div class="completion-actions">
           <el-button @click="goToResults">查看评阅结果</el-button>
@@ -34,33 +33,34 @@
 
           <el-collapse-item name="abnormal">
             <template #title>
-              <span class="panel-title">异常试卷</span>
+              <span class="panel-title">0分试卷</span>
               <span class="panel-count"><strong>{{ abnormalRows.length }}</strong> 份</span>
             </template>
-            <el-empty v-if="!abnormalRows.length" description="本次评阅没有异常试卷" :image-size="56" />
+            <el-empty v-if="!abnormalRows.length" description="本次评阅没有0分试卷" :image-size="56" />
             <StudentTable v-else :rows="abnormalRows" />
           </el-collapse-item>
         </el-collapse>
 
         <el-alert
           v-if="abnormalCount"
-          title="请在查看评阅结果页面的异常试卷标签中继续处理异常试卷。"
+          title="请在查看评阅结果页面的0分试卷标签中继续处理0分试卷。"
           type="warning"
           show-icon
           :closable="false"
         />
-        <el-alert v-else-if="rows.length" title="本次评阅未发现异常试卷。" type="success" show-icon :closable="false" />
+        <el-alert v-else-if="rows.length" title="本次评阅未发现0分试卷。" type="success" show-icon :closable="false" />
       </div>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElTable, ElTableColumn } from 'element-plus'
 import { getCandidateAssignments, getLocalPackageResultData, type LocalGradingRecordItem } from '@/api/teacher-scoring'
 import { loadDisplayStructure } from '@/utils/paper-structure'
+import { fetchScoringContextNames } from '@/utils/scoring-context'
 import {
   buildFormalTopics,
   extractReviewSummaryText,
@@ -106,7 +106,7 @@ const StudentTable = defineComponent({
         }),
         h(ElTableColumn, { prop: 'statusText', label: '评分状态', minWidth: 130 }),
         h(ElTableColumn, { prop: 'scoreText', label: '得分', width: 120 }),
-        h(ElTableColumn, { label: '评阅汇总结果', minWidth: 420 }, {
+        h(ElTableColumn, { label: '异常情况汇总', minWidth: 420 }, {
           default: ({ row }: { row: CompletionRow }) => (row.reviewSummary.length
             ? h('div', { class: 'review-summary-list' }, row.reviewSummary.map((item) => h('div', { class: 'review-summary-item', key: item.label }, [
               h('span', { class: 'review-question-no' }, item.label),
@@ -121,6 +121,18 @@ const StudentTable = defineComponent({
 
 const route = useRoute()
 const router = useRouter()
+// 标题括号里用试卷包名
+const contextScopeLabel = ref('')
+watch(
+  () => [route.params.subjectId, route.params.examId, route.params.packageId],
+  async () => {
+    const { packageName } = await fetchScoringContextNames(
+      String(route.params.subjectId), String(route.params.examId), String(route.params.packageId)
+    )
+    contextScopeLabel.value = packageName
+  },
+  { immediate: true }
+)
 const loading = ref(false)
 const rows = ref<CompletionRow[]>([])
 const expandedPanels = ref<string[]>(['graded'])
@@ -160,10 +172,11 @@ const buildRows = (students: Array<{ student_no: string }>, records: LocalGradin
         latestByQuestion.delete(no)
       }
     }
+    // 评阅汇总结果：每道题先取最新一条记录（列表按评分时间倒序），
+    // 汇总内容优先取 review_summary 字段，旧记录回退评语末尾的（复核提示：…）；
+    // 「没交文件记0分」不算转人工：该大题（含全部小题）没有任何答案
+    // 结果文件时，服务的需人工复核标记不进汇总（归属数据缺失时保守保留）。
     const reviewSummary = [...latestByQuestion.entries()]
-      .filter(([, record]) => Number(record.needs_manual) === 1)
-      // 「没交文件记0分」不算转人工：该大题（含全部小题）没有任何答案
-      // 结果文件时，服务的需人工复核标记不进汇总（归属数据缺失时保守保留）。
       .filter(([questionNo]) => topicHasAssignmentFiles(
         assignmentFileMap.value[student.student_no],
         topics[Number(questionNo.split('.')[0]) - 1],
@@ -172,7 +185,7 @@ const buildRows = (students: Array<{ student_no: string }>, records: LocalGradin
       .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
       .map(([questionNo, record]) => ({
         label: formatReviewQuestionLabel(questionNo),
-        comment: extractReviewSummaryText(record)
+        comment: String(record.review_summary || '').trim() || extractReviewSummaryText(record)
       }))
       .filter((item) => item.comment)
     // 异常试卷只放总分为 0 分的考生
@@ -242,6 +255,7 @@ onMounted(async () => {
 .completion-page { min-height: 100vh; padding: 24px; box-sizing: border-box; background: #f4f6f9; }
 .completion-panel { min-height: calc(100vh - 48px); padding: 26px 30px 34px; box-sizing: border-box; border-radius: 12px; background: #fff; }
 .completion-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid #e5e7eb; }
+.header-context-scope { color: inherit; font-size: inherit; font-weight: inherit; }
 .completion-header h1 { margin: 0; color: #1f2937; font-size: 22px; }
 .completion-header p { margin: 7px 0 0; color: #7b8798; }
 .completion-actions { display: flex; flex-wrap: wrap; gap: 8px; }

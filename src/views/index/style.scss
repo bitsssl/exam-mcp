@@ -5,7 +5,26 @@
   background: var(--default-bg-color);
 
   #app-sidebar {
+    position: relative;
     flex-shrink: 0;
+
+    // 侧边栏右缘拖拽手柄：悬停/拖动时显形，平时隐形
+    .sidebar-resize-handle {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      z-index: 320;
+      width: 6px;
+      height: 100vh;
+      background: transparent;
+      cursor: col-resize;
+      transition: background-color 0.2s;
+
+      &:hover,
+      &.is-dragging {
+        background-color: var(--el-color-primary-light-7);
+      }
+    }
   }
 
   #app-main {
@@ -52,6 +71,12 @@
       height: 100dvh;
     }
   }
+}
+
+/* 拖拽调宽进行中：全局显示列调整光标并禁用文本选择（body 在组件外，需全局样式） */
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 @media only screen and (width <= 800px) {

@@ -18,7 +18,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="试卷包名称" required>
-        <el-input v-model="packageName" maxlength="120" show-word-limit placeholder="请输入试卷包名称" />
+        <el-input v-model="packageName" maxlength="120" show-word-limit placeholder="默认带出考试名称，可追加 1、2 等批次号区分多次上传" />
       </el-form-item>
       <el-form-item label="试卷包内容" required>
         <el-radio-group v-model="uploadMode" class="upload-mode">
@@ -95,6 +95,13 @@ const folderLabel = ref('未选择文件夹')
 const hasPackageContent = computed(() => uploadMode.value === 'archive' ? Boolean(archiveFile.value) : folderFiles.value.length > 0)
 const activeStep = computed(() => hasPackageContent.value ? 2 : examId.value ? 2 : subjectId.value ? 1 : 0)
 const canSubmit = computed(() => Boolean(subjectId.value && examId.value && packageName.value.trim() && hasPackageContent.value))
+
+// 试卷包名称默认带出所选考试的名称（如 数字媒体技术及应用202611-A）；
+// 试卷包可能分多次上传，用户可在名称后追加 1、2 等批次号，字段保持可编辑
+watch(examId, (value) => {
+  const exam = exams.value.find((item) => item.id === value)
+  packageName.value = exam?.exam_name || ''
+})
 
 watch(() => props.modelValue, (open) => { if (open) void loadSubjects() })
 
@@ -212,7 +219,9 @@ async function submit() {
   const subject = subjects.value.find((item) => item.subject_id === subjectId.value)
   const exam = exams.value.find((item) => item.id === examId.value)
   const files = uploadMode.value === 'archive' && archiveFile.value ? [archiveFile.value] : [...folderFiles.value]
-  const paths = uploadMode.value === 'archive' && archiveFile.value ? [archiveFile.value.name] : [...folderPaths.value]
+  // 压缩包自带目录结构，解析时由后端解压还原；目录清单只用于文件夹模式的空目录，
+  // 若把 zip 文件名传进去，后端会把它当目录创建，与已保存的同名压缩包冲突（WinError 183）
+  const paths = uploadMode.value === 'archive' ? [] : [...folderPaths.value]
   const request: PackageUploadRequest = {
     subjectId: String(subjectId.value),
     examId: String(examId.value),

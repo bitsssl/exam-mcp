@@ -3,7 +3,7 @@
     <section class="formal-student-detail-panel">
       <div class="detail-page-header">
         <div>
-          <h1>考生评阅详情</h1>
+          <h1>考生评阅详情<span v-if="contextScopeLabel" class="header-context-scope">（{{ contextScopeLabel }}）</span></h1>
         </div>
         <el-button @click="goBack">返回评阅结果</el-button>
       </div>
@@ -37,7 +37,9 @@
             >
               <template #title>
                 <strong>第{{ topicIndex + 1 }}大题</strong>
-                <span class="section-title">{{ displayText(topic.question) || '未命名题目' }}</span>
+                <!-- 题干只在卡片里渲染一次：无子题的大题完整题干在下方卡片，
+                     有子题的大题此处保留大题题干（小题题干与大题重复时已在卡片内去重） -->
+                <span v-if="(topic.sub_question || []).length" class="section-title">{{ displayText(topic.question) || '未命名题目' }}</span>
                 <el-tag size="small">{{ subQuestionCount(topic) }} 题</el-tag>
                 <el-tag
                   v-if="topicGrades[topicIndex] && topicGrades[topicIndex].gradedCount"
@@ -51,12 +53,12 @@
                 <div v-if="!(topic.sub_question || []).length" class="question-card">
                   <div class="question-head">
                     <span class="question-no">Q{{ topicIndex + 1 }}</span>
-                    <strong>{{ displayText(topic.question) || '未命名题目' }}</strong>
+                    <span class="question-text">{{ displayText(topic.question) || '未命名题目' }}</span>
                     <div class="question-head-actions">
                       <el-tag v-if="topicGrades[topicIndex]" size="small" type="success" effect="light">已评阅</el-tag>
                     </div>
                   </div>
-                  <div v-if="topic.display_steps?.length" class="steps">
+                  <div v-if="topic.display_steps?.length && !stepsDuplicateQuestion(topic)" class="steps">
                     <div v-for="(step, stepIndex) in topic.display_steps" :key="stepIndex"><span>（{{ stepIndex + 1 }}）</span>{{ displayText(step) }}</div>
                   </div>
                   <div v-if="standaloneImages(topic).length" class="question-images">
@@ -80,18 +82,18 @@
                         </template>
                       </el-table-column>
                     </el-table>
-                    <el-table v-else-if="questionTextRows(topic).length" :data="questionTextRows(topic)" size="small" border>
-                      <el-table-column prop="content" label="文本内容" min-width="220" />
-                      <el-table-column prop="source" label="文本来源" min-width="220" show-overflow-tooltip />
-                      <el-table-column prop="sourceType" label="来源文件类型" width="110" />
-                      <el-table-column prop="description" label="答案内容说明" min-width="140" />
-                      <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
-                    </el-table>
+                    <div v-else-if="questionTextRows(topicIndex, -1).length" class="answer-text-box">
+                      <div v-for="(row, rowIndex) in questionTextRows(topicIndex, -1)" :key="rowIndex" class="answer-text-line">
+                        <span class="answer-text-desc">{{ row.description }}</span>
+                        <span class="answer-text-content">{{ displayText(row.content) }}</span>
+                      </div>
+                      <div v-if="answerTextSource(questionTextRows(topicIndex, -1))" class="answer-text-source">{{ answerTextSource(questionTextRows(topicIndex, -1)) }}</div>
+                    </div>
                     <el-empty v-else description="本题暂无答案结果文件" :image-size="44" />
                   </div>
                   <div v-if="topicGrades[topicIndex]" class="sub-score-summary">
-                    <span>评阅：{{ questionScoreText(topicGrades[topicIndex]) }}</span>
-                    <span>评语：{{ topicGrades[topicIndex].comments.join('\n') || '暂无评语' }}</span>
+                    <div class="score-line">评阅：{{ questionScoreText(topicGrades[topicIndex]) }}</div>
+                    <div class="comment-line"><strong>评语：</strong><strong>{{ topicGrades[topicIndex].comments.join('\n') || '暂无评语' }}</strong></div>
                   </div>
                 </div>
 
@@ -103,12 +105,12 @@
                   >
                     <div class="question-head">
                       <span class="question-no">Q{{ subQuestionLabel(topicIndex, subIndex) }}</span>
-                      <strong>{{ displayText(subQuestion.question) || '未命名题目' }}</strong>
+                      <span v-if="!subQuestionDuplicatesTopic(topic, subQuestion)" class="question-text">{{ displayText(subQuestion.question) || '未命名题目' }}</span>
                       <div class="question-head-actions">
                         <el-tag v-if="subGrades.get(`${topicIndex}.${subIndex}`)" size="small" type="success" effect="light">已评阅</el-tag>
                       </div>
                     </div>
-                    <div v-if="subQuestion.display_steps?.length" class="steps">
+                    <div v-if="subQuestion.display_steps?.length && !subQuestionDuplicatesTopic(topic, subQuestion) && !stepsDuplicateQuestion(subQuestion)" class="steps">
                       <div v-for="(step, stepIndex) in subQuestion.display_steps" :key="stepIndex"><span>（{{ stepIndex + 1 }}）</span>{{ displayText(step) }}</div>
                     </div>
                     <div v-if="standaloneImages(subQuestion).length" class="question-images">
@@ -132,21 +134,21 @@
                           </template>
                         </el-table-column>
                       </el-table>
-                      <el-table v-else-if="questionTextRows(subQuestion).length" :data="questionTextRows(subQuestion)" size="small" border>
-                        <el-table-column prop="content" label="文本内容" min-width="220" />
-                        <el-table-column prop="source" label="文本来源" min-width="220" show-overflow-tooltip />
-                        <el-table-column prop="sourceType" label="来源文件类型" width="110" />
-                        <el-table-column prop="description" label="答案内容说明" min-width="140" />
-                        <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
-                      </el-table>
+                      <div v-else-if="questionTextRows(topicIndex, subIndex).length" class="answer-text-box">
+                        <div v-for="(row, rowIndex) in questionTextRows(topicIndex, subIndex)" :key="rowIndex" class="answer-text-line">
+                          <span class="answer-text-desc">{{ row.description }}</span>
+                          <span class="answer-text-content">{{ displayText(row.content) }}</span>
+                        </div>
+                        <div v-if="answerTextSource(questionTextRows(topicIndex, subIndex))" class="answer-text-source">{{ answerTextSource(questionTextRows(topicIndex, subIndex)) }}</div>
+                      </div>
                       <el-empty v-else description="本题暂无答案结果文件" :image-size="44" />
                     </div>
                     <div
                       v-if="subGrades.get(`${topicIndex}.${subIndex}`)"
                       class="sub-score-summary"
                     >
-                      <span>评阅：{{ questionScoreText(subGrades.get(`${topicIndex}.${subIndex}`)) }}</span>
-                      <span>评语：{{ subGrades.get(`${topicIndex}.${subIndex}`)?.comments.join('\n') || '暂无评语' }}</span>
+                      <div class="score-line">评阅：{{ questionScoreText(subGrades.get(`${topicIndex}.${subIndex}`)) }}</div>
+                      <div class="comment-line"><strong>评语：</strong><strong>{{ subGrades.get(`${topicIndex}.${subIndex}`)?.comments.join('\n') || '暂无评语' }}</strong></div>
                     </div>
                   </div>
                 </template>
@@ -174,10 +176,11 @@ import {
   type StudentAnswerJson
 } from '@/api/teacher-scoring'
 import { extractEmbeddedImagePaths, stripEmbeddedImageMarkers } from '@/utils/local-scoring-package'
-import { getAssignmentFileRows, getAssignmentTextRows } from '@/utils/assignment-files'
+import { getAssignmentFileRows, getAssignmentTextRowsForQuestion } from '@/utils/assignment-files'
 import { findStandardPaperStructure, loadLatestStandardStructure } from '@/utils/paper-structure'
 import { openStudentAnswerFolder } from '@/api/teacher-scoring'
 import { splitCommentHint, type CommentSegment } from '@/utils/comment-hint'
+import { fetchScoringContextNames } from '@/utils/scoring-context'
 import {
   buildFormalTopics,
   buildStandardMaxScoreMap,
@@ -195,6 +198,19 @@ const router = useRouter()
 const loading = ref(false)
 
 const studentNo = computed(() => String(route.params.studentNo || '').trim())
+// 标题括号里用试卷包名；考生号已在下方「学号」处展示
+const contextScopeLabel = ref('')
+watch(
+  () => [route.params.subjectId, route.params.examId, route.params.packageId, studentNo.value],
+  async () => {
+    if (!studentNo.value) return
+    const { packageName } = await fetchScoringContextNames(
+      String(route.params.subjectId), String(route.params.examId), String(route.params.packageId)
+    )
+    contextScopeLabel.value = packageName
+  },
+  { immediate: true }
+)
 
 const topics = ref<FormalTopicNode[]>([])
 const answerFolderPath = ref('')
@@ -287,10 +303,40 @@ const answerFileRows = (topicIndex: number, subIndex: number, question: FormalTo
   return getAssignmentFileRows(assignment.value, questionNo, question.question)
 }
 
-// 无答案结果文件时的文本答案表格行：用归属结果里的抽取内容
-// （11A 等纯文本 AI 题的字段，每字段一行）；没有抽取内容就返回空
-// （显示"无"），答卷文档转换出的材料文本不冒充考生答案。
-const questionTextRows = (question: FormalTopicNode) => getAssignmentTextRows(assignment.value)
+// 无答案结果文件时的文本答案表格行：用归属结果里**本题自己的**抽取内容
+// （11A 等纯文本 AI 题的字段，每字段一行）；本题没有抽取内容就返回空
+// （显示"无"）。不能用考生级 extractedContent——多题科目里它只装了
+// 一道题的字段，别的题会串题显示（Word 题显示 Excel 题的答案）。
+const questionTextRows = (topicIndex: number, subIndex: number) => {
+  const questionNo = subIndex >= 0 ? `${topicIndex + 1}.${subIndex + 1}` : `${topicIndex + 1}`
+  return getAssignmentTextRowsForQuestion(assignment.value, questionNo)
+}
+
+// 大题下唯一小题的题干与大题题干相同时（解析结构会把大题题干复制给小题），
+// 小题卡片不再重复显示这段题干，避免"第1大题下面又来一个 Q1 全文"。
+const subQuestionDuplicatesTopic = (topic: FormalTopicNode, subQuestion: FormalTopicNode) => {
+  const major = displayText(topic.question).replace(/\s+/g, '')
+  const sub = displayText(subQuestion.question).replace(/\s+/g, '')
+  return Boolean(major) && major === sub
+}
+
+// display_steps 只是题干文本的逐段拆分（每段都能在题干原文里找到）时，
+// 不再重复渲染——题干已在卡片标题里完整显示过。
+const stepsDuplicateQuestion = (question: FormalTopicNode) => {
+  const steps = ((question.display_steps || []) as unknown[])
+    .map((step) => displayText(typeof step === 'string' ? step : undefined).replace(/\s+/g, ''))
+    .filter(Boolean)
+  if (!steps.length) return false
+  const text = displayText(question.question).replace(/\s+/g, '')
+  if (!text) return false
+  return steps.every((step) => text.includes(step))
+}
+
+// 抽取行的来源去重（同一题的字段通常来自同一份文档）
+const answerTextSource = (rows: Array<{ source?: string; sourceType?: string }>) => {
+  const sources = Array.from(new Set(rows.map((row) => String(row.source || '').trim()).filter(Boolean)))
+  return sources.length ? `来源：${sources.join('；')}` : ''
+}
 
 const assignment = ref<any>(null)
 
@@ -398,6 +444,7 @@ onMounted(async () => {
   background: #fff;
 }
 
+.header-context-scope { color: inherit; font-size: inherit; font-weight: inherit; }
 .detail-page-header {
   display: flex;
   align-items: center;
@@ -519,11 +566,11 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
-.question-head strong {
+.question-head .question-text {
   flex: 1;
   min-width: 0;
   color: #111827;
-  font-weight: 700;
+  font-weight: 400;
   font-size: 16px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -605,8 +652,8 @@ onMounted(async () => {
 
 .sub-score-summary {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 8px;
   color: #606266;
   font-size: 14px;
@@ -614,18 +661,60 @@ onMounted(async () => {
   white-space: pre-wrap;
 }
 
+/* 评阅：分数 加大加粗；评语独占一行放在其下方 */
+.sub-score-summary .score-line {
+  color: #dc2626;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.sub-score-summary.sub-score-note .score-line {
+  color: #909399;
+  font-weight: 400;
+}
+
 .comment-hint { color: #dc2626; }
 .answer-folder-line { color: #606266; }
 .answer-folder-link { color: var(--el-color-primary); cursor: pointer; text-decoration: none; overflow-wrap: anywhere; }
 .answer-folder-link:hover { color: var(--el-color-primary); text-decoration: underline; }
-.sub-score-summary span:first-child {
-  color: #dc2626;
-  font-weight: 600;
+
+/* 评语是重点：加粗、加大字号并加深颜色 */
+.sub-score-summary strong {
+  color: #1f2937;
+  font-size: 16px;
 }
 
-.sub-score-summary.sub-score-note span:first-child {
-  color: #909399;
-  font-weight: 400;
+/* 考生文本答案：去掉表格，统一为一个大框，"答案内容说明"前置 */
+.answer-text-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.answer-text-line {
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-desc {
+  color: #354861;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.answer-text-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-source {
+  color: #8b97a8;
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {

@@ -28,6 +28,8 @@ export interface ExamItem {
   exam_time?: string;
   answer_key_path?: string;
   blank_paper_path?: string;
+  /** 已保存的考试素材文件夹（相对路径），评阅时用素材名单做证据比对 */
+  material_path?: string;
   creator_id: number;
 }
 
@@ -36,8 +38,10 @@ export interface CreateExamPayload {
   exam_time?: string;
   blank_paper?: File;
   answer_key?: File;
-  /** 后续素材服务使用的考试素材文件夹内容，当前仅负责随表单上传。 */
+  /** 考试素材文件夹内容：评阅时用素材文件名与考生工程/会话文件做证据比对。 */
   material_files?: File[];
+  /** 编辑考试时移除已保存的素材文件夹 */
+  remove_material_folder?: boolean;
 }
 
 export type UpdateExamPayload = CreateExamPayload & {
@@ -486,6 +490,9 @@ export interface LocalGradingRecordItem extends LocalGradingRecordPayload {
   mcp_raw_json?: any;
   /** 需人工复核：服务返回 needs_review 非空或评分失败（无分数）→ 1，否则 0 */
   needs_manual?: number;
+  /** 服务信封复核信号（v1.0.8 约定：int 0/1）与复核内容汇总 */
+  needs_review?: number;
+  review_summary?: string | null;
   graded_at?: string;
   updated_at?: string;
   round_note?: string | null;
@@ -1248,7 +1255,7 @@ export async function gradeWithMcp(data: GradingPayload) {
   return response.data;
 }
 
-export async function gradeBatchWithMcp(data: BatchGradingPayload) {
+export function buildGradeBatchForm(data: BatchGradingPayload, concurrency?: number) {
   const formData = new FormData();
   if (data.subject_id !== undefined) formData.append('subject_id', String(data.subject_id));
   if (data.exam_id !== undefined) formData.append('exam_id', String(data.exam_id));
@@ -1258,6 +1265,7 @@ export async function gradeBatchWithMcp(data: BatchGradingPayload) {
   if (data.student_no_hash) formData.append('student_no_hash', data.student_no_hash);
   if (data.is_trial !== undefined) formData.append('is_trial', data.is_trial ? '1' : '0');
   formData.append('mode', data.mode);
+  if (concurrency !== undefined) formData.append('concurrency', String(concurrency));
   const targetMeta = data.targets.map((target, index) => {
     const fileField = `image_${index}`;
     if (target.image) {
@@ -1285,6 +1293,11 @@ export async function gradeBatchWithMcp(data: BatchGradingPayload) {
     };
   });
   formData.append('targets', JSON.stringify(targetMeta));
+  return formData;
+}
+
+export async function gradeBatchWithMcp(data: BatchGradingPayload) {
+  const formData = buildGradeBatchForm(data);
 
   const response = await api.post(`${apiPrefix}/teacher-scoring/grade-batch-with-mcp`, formData, {
     headers: {
@@ -1293,4 +1306,70 @@ export async function gradeBatchWithMcp(data: BatchGradingPayload) {
     timeout: 0
   });
   return response.data;
+}
+
+/** 异步批量评阅：提交后立即返回任务 ID（评分在后端线程池并发执行）。 */
+export async function submitGradeBatchAsync(data: BatchGradingPayload, concurrency?: number) {
+  const formData = buildGradeBatchForm(data, concurrency);
+  const response = await api.post(`${apiPrefix}/teacher-scoring/grade-batch-with-mcp-async`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    timeout: 0
+  });
+  return response.data;
+}
+
+/** 查询异步批量评阅任务进度；status=completed 时 results 与同步接口同形。 */
+export async function getGradeBatchJobStatus(jobId: string | number) {
+  const response = await api.get(`${apiPrefix}/teacher-scoring/grade-batch-jobs/${jobId}`);
+  return response.data;
+}
+
+/**
+ * 异步批量评阅（提交 + 轮询）：后端线程池按“题 × 考生”并发评分，
+ * 每完成一题立即落一条评分记录；onProgress 用于展示进度，任务完成后
+ * 返回与同步 gradeBatchWithMcp 同形的响应。
+ */
+export async function gradeBatchWithMcpAsync(
+  data: BatchGradingPayload,
+  onProgress?: (progress: { completed: number; total: number; success_count: number; failed_count: number; completed_students?: number; total_students?: number }) => void,
+  options?: { concurrency?: number; pollIntervalMs?: number }
+) {
+  const pollIntervalMs = options?.pollIntervalMs ?? 2500;
+  const submitResponse = await submitGradeBatchAsync(data, options?.concurrency);
+  const jobId = (submitResponse?.data as any)?.job_id;
+  if (!jobId) throw new Error(submitResponse?.message || '批量评阅任务提交失败');
+  onProgress?.({ completed: 0, total: Number((submitResponse?.data as any)?.total || 0), success_count: 0, failed_count: 0, completed_students: 0, total_students: Number((submitResponse?.data as any)?.student_total || 0) });
+  // 轮询进度；单题失败由后端标记 failed 并继续其余目标，不中断整卷
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const jobResponse = await getGradeBatchJobStatus(jobId);
+    if (![0, 200].includes(jobResponse?.code)) throw new Error(jobResponse?.message || '查询批量评阅进度失败');
+    const job = jobResponse?.data as any;
+    if (!job) continue;
+    onProgress?.({
+      completed: Number(job.completed || 0),
+      total: Number(job.total || 0),
+      success_count: Number(job.success_count || 0),
+      failed_count: Number(job.failed_count || 0),
+      completed_students: Number(job.completed_students || 0),
+      total_students: Number(job.student_total || 0)
+    });
+    if (job.status === 'completed') {
+      return {
+        code: jobResponse.code,
+        message: jobResponse.message,
+        data: {
+          status: Number(job.failed_count || 0) ? 'partial_success' : 'success',
+          mode: job.mode,
+          total: Number(job.total || 0),
+          success_count: Number(job.success_count || 0),
+          failed_count: Number(job.failed_count || 0),
+          results: job.results || []
+        } as BatchGradingResult
+      };
+    }
+    if (job.status === 'failed') throw new Error(job.error || '批量评阅失败');
+  }
 }

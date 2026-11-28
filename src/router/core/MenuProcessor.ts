@@ -17,6 +17,7 @@ import { getGradingTasks } from '@/api/teacher-scoring'
 import { asyncRoutes } from '../routes/asyncRoutes'
 import { RoutesAlias } from '../routesAlias'
 import { formatMenuTitle } from '@/utils'
+import { stripParseTimestampSuffix } from '@/utils/scoring-context'
 import { ComponentLoader } from './ComponentLoader'
 import { RouteTransformer } from './RouteTransformer'
 
@@ -137,12 +138,14 @@ export class MenuProcessor {
   }
 
   /**
-   * 任务子菜单标题：考试名（同名任务追加任务号区分）
+   * 任务子菜单标题：试卷包名（同名任务追加任务号区分）
    */
   private buildGradingTaskMenuTitle(task: any, allTasks: any[]): string {
-    const base = String(task.exam_name || task.package_name || '').trim() || `任务${task.task_id}`
+    const base =
+      stripParseTimestampSuffix(String(task.package_name || task.exam_name || '')) ||
+      `任务${task.task_id}`
     const sameBaseCount = allTasks.filter(
-      (item) => String(item.exam_name || item.package_name || '').trim() === base
+      (item) => stripParseTimestampSuffix(String(item.package_name || item.exam_name || '')) === base
     ).length
     return sameBaseCount > 1 ? `${base}（任务${task.task_id}）` : base
   }

@@ -17,7 +17,7 @@
                 <el-table-column prop="student_no" label="考生" min-width="220" />
                 <el-table-column label="抽取状态" width="130"><template #default="{ row: candidate }"><el-tag size="small" :type="candidate.status === 'blank' || candidate.assignment_json?.student?.isBlank ? 'info' : candidate.status === 'success' ? 'success' : 'warning'">{{ candidate.status === 'blank' || candidate.assignment_json?.student?.isBlank ? '空白试卷' : candidate.status === 'success' ? '完成' : candidate.status === 'partial' ? '部分异常' : '失败' }}</el-tag></template></el-table-column>
                 <el-table-column label="文本内容" width="100" align="center"><template #default="{ row: candidate }">{{ hasTextContent(candidate) ? '已获取' : '无' }}</template></el-table-column>
-                <el-table-column label="文件数" width="100"><template #default="{ row: candidate }">{{ isTextContentPackage(row.upload_id) ? 0 : (candidate.assignment_json?.student?.fileCount || 0) }}</template></el-table-column>
+                <el-table-column label="文件数" width="100"><template #default="{ row: candidate }">{{ candidate.assignment_json?.student?.fileCount || 0 }}</template></el-table-column>
                 <el-table-column label="异常文件" width="110"><template #default="{ row: candidate }">{{ candidate.assignment_json?.student?.abnormalFileCount || 0 }}</template></el-table-column>
                 <el-table-column label="操作" width="180" fixed="right"><template #default="{ row: candidate }"><el-button link type="primary" @click="viewAssignmentReport(row, candidate)">查看答案抽取</el-button></template></el-table-column>
               </el-table>
@@ -130,16 +130,17 @@ function pagedAssignments(row: any) {
   const page = assignmentPage.value[row.upload_id] || 1
   return records.slice((page - 1) * pageSize, page * pageSize)
 }
-// 是否抽取到文本内容（11A-word/11A-excel 等纯文本题）：归属结果的
-// extractedContent.fields 里有非空字段即为"已获取"。
+// 是否抽取到文本内容（通用口径）：11 系的关键词字段在
+// extractedContent.fields，数据库卷等按题拆的作答文本在
+// questionContents[].answerText——任一有非空内容即"已获取"。
 function hasTextContent(candidate: CandidateAssignmentRecord) {
+  if (hasExtractedFields(candidate)) return true
+  const contents = ((candidate.assignment_json as any)?.student?.questionContents || []) as Array<{ answerText?: string }>
+  return contents.some((entry) => String(entry?.answerText || '').trim())
+}
+function hasExtractedFields(candidate: CandidateAssignmentRecord) {
   const fields = ((candidate.assignment_json as any)?.student?.extractedContent?.fields || {}) as Record<string, string>
   return Object.values(fields).some((value) => String(value || '').trim())
-}
-// 文本卷判定：包内任一考生抽取到文本内容即视为文本卷——整包的
-// 文件数都是 0（考生的答案在文本里，KS 里的杂项文件不算答案文件）。
-function isTextContentPackage(uploadId: number) {
-  return (assignmentMap.value[uploadId] || []).some((record) => hasTextContent(record))
 }
 function changeAssignmentPage(uploadId: number, page: number) {
   assignmentPage.value = { ...assignmentPage.value, [uploadId]: page }

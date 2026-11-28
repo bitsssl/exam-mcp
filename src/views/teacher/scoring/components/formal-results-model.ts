@@ -117,7 +117,18 @@ export const aggregateRecords = (records: LocalGradingRecordItem[]) => {
   const maxScores = latest
     .map((record) => numericScore(record.max_score))
     .filter((score): score is number => score !== null && score > 0)
-  const comments = [...new Set(latest.map((record) => String(record.grading_desc || '').trim()).filter(Boolean))]
+  // 评语正文（grading_desc）+ 复核总结（review_summary 字段，括号展示）：
+  // 新记录的评语保持纯评语，复核内容单独成段附在后面，教师一眼区分
+  const commentSet = new Set<string>()
+  latest.forEach((record) => {
+    const desc = String(record.grading_desc || '').trim()
+    if (desc) commentSet.add(desc)
+  })
+  latest.forEach((record) => {
+    const summary = String(record.review_summary || '').trim()
+    if (summary) commentSet.add(`（${summary}）`)
+  })
+  const comments = [...commentSet]
   const versions = latest.map((record) => Number(record.question_version_no || 0)).filter((value) => value > 0)
   return {
     score: scores.length ? Number(scores.reduce((sum, score) => sum + score, 0).toFixed(2)) : null,
@@ -128,7 +139,9 @@ export const aggregateRecords = (records: LocalGradingRecordItem[]) => {
   }
 }
 
-/** 评分信封的 review_summary（服务返回的复核内容汇总）：新信封顶层字段；旧信封回退评语末尾的（复核提示：…） */
+/** 评分信封的 review_summary（服务返回的复核内容汇总）：新信封顶层字段；
+ * 旧信封回退评语末尾的（复核提示：…）。仅 needs_manual=1 且有复核内容的
+ * 记录才进入评阅汇总，避免把模型评语里含“需人工复核”字样的整段文字误抓进来。 */
 export const extractReviewSummaryText = (record: LocalGradingRecordItem): string => {
   let raw = record.mcp_raw_json
   if (typeof raw === 'string') {

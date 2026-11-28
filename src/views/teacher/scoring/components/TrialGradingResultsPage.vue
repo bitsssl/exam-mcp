@@ -4,8 +4,7 @@
       <template #header>
         <div class="page-heading">
           <div>
-            <h1>试阅评分结果</h1>
-            <p>本页结果仅在当前页面临时展示，返回后不会保存。</p>
+            <h1>试阅评分结果<span v-if="contextSuffix" class="header-context-scope">（{{ contextSuffix }}）</span></h1>
           </div>
           <div class="heading-actions">
             <el-statistic v-if="currentQuestion" class="top-average-stat" title="本题平均分" :value="averageScore" :precision="2">
@@ -64,20 +63,27 @@
                 <div class="block-label">答案结果文本</div>
                 <div class="answer-text">{{ currentTextAnswerText }}</div>
               </div>
-              <div v-else-if="currentAnswerText && !hasAnyTextAnswerRows" class="question-block answer-block">
-                <div class="block-label">考生答案</div>
+              <div v-else-if="currentAnswerText" class="question-block answer-block">
+                <div class="block-label">答案结果文本</div>
                 <div class="answer-text">{{ currentAnswerText }}</div>
               </div>
-              <div class="question-block answer-files-block">
+              <div v-if="displayAnswerFileNames.length" class="question-block answer-files-block">
                 <div class="block-label">答案结果文件</div>
-                <div v-if="displayAnswerFileNames.length" class="answer-file-list">
+                <div class="answer-file-list">
                   <div v-for="fileName in displayAnswerFileNames" :key="fileName" class="answer-file-item">
                     {{ fileName }}
                   </div>
                 </div>
-                <div v-else class="answer-file-empty">无</div>
               </div>
-              <div v-if="currentQuestionStandard" class="question-block standard-block">
+              <div v-if="standardSections.reference" class="question-block answer-block">
+                <div class="block-label">参考答案</div>
+                <div class="answer-text">{{ standardSections.reference }}</div>
+              </div>
+              <div v-if="standardSections.criteria" class="question-block standard-block">
+                <div class="block-label">评分标准</div>
+                <div class="standard-text">{{ standardSections.criteria }}</div>
+              </div>
+              <div v-if="!standardSections.reference && !standardSections.criteria && currentQuestionStandard" class="question-block standard-block">
                 <div class="block-label">评阅标准</div>
                 <div class="standard-text">{{ currentQuestionStandard }}</div>
               </div>
@@ -111,13 +117,39 @@ import {
 import * as XLSX from 'xlsx'
 
 defineEmits<{ back: [] }>()
+import { fetchScoringContextNames } from '@/utils/scoring-context'
+
 const props = defineProps<{
   rows: Array<Record<string, any>>
   /** 文本作答内容行（按 考生号__题号 索引）：来自归属结果的抽取字段，由父页面传入 */
   textAnswerRows?: Record<string, Array<import('@/utils/assignment-files').AssignmentTextRow>>
   /** 是否为文本卷（包内任一考生抽到文本内容）：文本卷不显示考生答案材料块 */
   isTextPackage?: boolean
+  /** 归属上下文：当前临时结果来自哪个科目/考试/试卷包 */
+  subjectId?: number | string
+  examId?: number | string
+  packageId?: number | string
 }>()
+// 页面标题括号里只保留考试名；导出文件与报告标题用试卷包名
+const contextSuffix = ref('')
+const exportBaseName = ref('')
+const reportTitle = ref('')
+watch(
+  () => [props.subjectId, props.examId, props.packageId],
+  async () => {
+    const { examName, packageName } = await fetchScoringContextNames(
+      props.subjectId, props.examId, props.packageId
+    )
+    if (examName) {
+      contextSuffix.value = examName
+    }
+    if (packageName) {
+      exportBaseName.value = packageName
+      reportTitle.value = packageName
+    }
+  },
+  { immediate: true }
+)
 const currentIndex = ref(0)
 const questionIndex = ref(0)
 const sourceRows = computed(() => props.rows || [])
@@ -130,7 +162,7 @@ const questionRows = computed(() => {
   return [...groups.values()].map((group) => {
     if (group.length === 1) return group[0]
     const scores = group.map((row) => extractScore(row.result)).filter((score): score is number => score !== null)
-    const comments = [...new Set(group.map((row) => extractComment(row.result) || row.error || '').filter(Boolean))]
+    const comments = [...new Set(group.map((row) => extractComment(row.result, 0, String(row.question_no || row.question_label || '')) || row.error || '').filter(Boolean))]
     return {
       ...group[0],
       result: {
@@ -170,6 +202,17 @@ const currentQuestionStem = computed(() => {
   return stem.split(/\n作答[:：]/)[0].trim()
 })
 const currentQuestionStandard = computed(() => currentQuestionParts.value.standard)
+// 评阅标准文本拆分：参考答案与评分标准分块展示（按“参考答案：”“评分标准：”
+// 两个分段标记切分），没有明确分段标记时回退整块显示
+const standardSections = computed(() => {
+  const text = String(currentQuestionStandard.value || '')
+  if (!text) return { reference: '', criteria: '' }
+  const body = text.replace(/^【[^】]*】\s*/, '')
+  const criteriaMatch = body.match(/评分标准[:：]([\s\S]*)$/)
+  if (!criteriaMatch) return { reference: body.trim(), criteria: '' }
+  const reference = body.slice(0, criteriaMatch.index).replace(/^参考答案[:：]\s*/, '').trim()
+  return { reference, criteria: criteriaMatch[1].trim() }
+})
 const currentAnswerText = computed(() => String(currentQuestion.value?.answer_text || '').trim())
 // 文本作答内容行：考生号__题号 与分组键一致
 const currentTextAnswerRows = computed(() => {
@@ -207,7 +250,7 @@ const averageScore = computed(() => scores.value.length
   : 0)
 const currentScore = computed(() => currentQuestion.value ? scoreForRow(currentQuestion.value) : null)
 const currentComment = computed(() => currentQuestion.value
-  ? extractComment(currentQuestion.value.result) || String(currentQuestion.value.grading_desc || currentQuestion.value.grading_record?.grading_desc || '').trim()
+  ? extractComment(currentQuestion.value.result, 0, String(currentQuestion.value?.question_no || currentQuestion.value?.question_label || '')) || String(currentQuestion.value.grading_desc || currentQuestion.value.grading_record?.grading_desc || '').trim()
   : '')
 
 function extractScore(value: any, depth = 0): number | null {
@@ -243,19 +286,35 @@ function extractScore(value: any, depth = 0): number | null {
   return null
 }
 
-function extractComment(value: any, depth = 0): string {
+function extractComment(value: any, depth = 0, questionNo = ''): string {
   if (depth > 5 || value == null) return ''
   if (typeof value === 'string') {
-    try { return extractComment(JSON.parse(value), depth + 1) || value } catch { return value }
+    try { return extractComment(JSON.parse(value), depth + 1, questionNo) || value } catch { return value }
   }
-  if (Array.isArray(value)) return value.map((item) => extractComment(item, depth + 1)).filter(Boolean).join('\n')
+  if (Array.isArray(value)) return value.map((item) => extractComment(item, depth + 1, questionNo)).filter(Boolean).join('\n')
   if (typeof value === 'object') {
+    // 编排类信封（模块29等）的扣分项带 item 标记（"2.1"/"2.2"）：只采集
+    // 本题的扣分评语——整题信封里所有小题的扣分混在一起，不能串到每道小题
+    const deductions = value.deductions
+    if (questionNo && Array.isArray(deductions) && deductions.length) {
+      // 信封扣分项带 item 标记时严格按题过滤：本题没有扣分项（满分）
+      // 评语即为空——评语只列扣分项；无标记的旧信封沿用原合并逻辑
+      const marked = deductions.filter((d) => d && typeof d === 'object' && String(d.item || '').trim())
+      if (marked.length) {
+        const own = deductions
+          .filter((d) => d && typeof d === 'object' && String(d.item || '').trim() === questionNo)
+          .map((d) => String(d.reason || '').trim())
+          .filter(Boolean)
+        return own.join('\n')
+      }
+    }
     for (const key of ['comment', 'comments', 'grading_desc', 'grading_reason', 'score_reason', 'reasoning', 'explanation', 'remark', '评语', '评分说明', '评分理由', '说明', 'feedback', 'reason', '评价']) {
       const text = value[key]
       if (typeof text === 'string' && text.trim()) return text.trim()
     }
     // MCP 评分信封通常把逐项评语放在 items/deductions 中，
     // 不能只查顶层 comment，否则 1.1 这类结果会显示“暂无评语”。
+    // 注意：details 是新版模块30的推演过程字段（reason），不是评语，不采集。
     const nestedComments: string[] = []
     for (const key of [
       'score_data',
@@ -270,7 +329,7 @@ function extractComment(value: any, depth = 0): string {
       'service_results'
     ]) {
       if (value[key] !== undefined) {
-        const comment = extractComment(value[key], depth + 1)
+        const comment = extractComment(value[key], depth + 1, questionNo)
         if (comment) nestedComments.push(comment)
       }
     }
@@ -295,17 +354,40 @@ const getExportQuestionParts = (row: Record<string, any>) => {
 }
 
 function exportExcel() {
-const data = questionRows.value.map((row) => ({
+  // 题干：从拼装题文（含评阅标准块与“作答：…”段）里剥出题干本身
+  const stemForRow = (row: Record<string, any>) => {
+    const text = String(row.question_text || '').trim()
+    const marker = text.search(/\n\n【(?:试阅采用的评阅标准|本题评阅标准)】\n?/)
+    const stem = marker >= 0 ? text.slice(0, marker).trim() : text
+    return stem.split(/\n作答[:：]/)[0].trim()
+  }
+  // 考生答案：文本卷取归属抽取的字段内容（分号隔开），其余取作答文本
+  const answerForRow = (row: Record<string, any>) => {
+    const key = `${String(row.student_no || '')}__${String(row.question_no || row.question_label || '')}`
+    const textRows = props.textAnswerRows?.[key] || []
+    if (textRows.length) return textRows.map(({ content }) => content).join('；')
+    const text = String(row.answer_text || '').trim()
+    if (text) return text
+    // 文件作答卷（如 33A）：没有文本答案时列出考生的结果文件名
+    const value = row.answer_file_names || row.answer_files || row.answer_result_files
+    const values = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : [])
+    const fileNames = [...new Set(values.map((item: any) => {
+      if (typeof item === 'string') return item.trim()
+      return String(item?.fileName || item?.file_name || item?.name || item?.relative_path || item?.path || '').trim()
+    }).filter(Boolean))]
+    return fileNames.join('；')
+  }
+  const data = questionRows.value.map((row) => ({
     考生号: row.student_no || '',
     题号: row.question_no || '',
-    试题: row.question_label || row.question_no || '',
+    题干: stemForRow(row),
+    考生答案: answerForRow(row),
     得分: extractScore(row.result) ?? '',
-    满分: row.max_score ?? '',
     评语: extractComment(row.result) || row.grading_desc || row.grading_record?.grading_desc || row.error || ''
   }))
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data), '试阅结果')
-  XLSX.writeFile(workbook, '临时试阅评分结果.xlsx')
+  XLSX.writeFile(workbook, `${exportBaseName.value || contextSuffix.value || '临时试阅评分结果'}（试阅）.xlsx`)
 }
 
 function exportJson() {
@@ -339,7 +421,7 @@ function exportJson() {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = '临时试阅评分结果.json'
+  anchor.download = `${exportBaseName.value || contextSuffix.value || '临时试阅评分结果'}（试阅）.json`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -383,7 +465,7 @@ const downloadDocx = async (doc: WordDocument) => {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = '试阅评分报告.docx'
+  anchor.download = `${exportBaseName.value || contextSuffix.value || '临时试阅评分结果'}（试阅）.docx`
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
@@ -426,17 +508,19 @@ async function exportReport() {
     })
   }
 
-  const generatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+  // 报告标题用试卷包名（如：大学信息技术202611-A）；副标题带试阅份数与题号清单
+  const reportHeading = reportTitle.value || exportBaseName.value || contextSuffix.value || '试阅评分报告'
+  const questionLabels = sortedQuestions.map(([questionNo]) => `Q${questionNo}`).join('、')
   const children: Array<Paragraph | Table> = [
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 160 },
-      children: [new TextRun({ text: '试阅评分报告', bold: true, font: 'Microsoft YaHei', size: 32 })]
+      children: [new TextRun({ text: reportHeading, bold: true, font: 'Microsoft YaHei', size: 32 })]
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 360 },
-      children: [new TextRun({ text: `生成时间：${generatedAt}　|　结果仅用于本次试阅，未写入正式评分记录`, font: 'Microsoft YaHei', size: 20, color: '6B7280' })]
+      children: [new TextRun({ text: `试阅份数：${rows.value.length}　　试阅题目：${questionLabels || '无'}`, font: 'Microsoft YaHei', size: 21 })]
     })
   ]
 
@@ -498,6 +582,7 @@ async function exportReport() {
 .page-heading, .heading-actions, .result-overview, .question-info, .student-navigation { display: flex; align-items: center; }
 .page-heading, .result-overview { justify-content: space-between; gap: 20px; }
 .page-heading h1 { margin: 0; font-size: 22px; color: var(--el-text-color-primary); }
+.header-context-scope { color: inherit; font-size: inherit; font-weight: inherit; }
 .page-heading p { margin: 7px 0 0; color: var(--el-text-color-secondary); }
 .heading-actions, .question-info { gap: 10px; flex-wrap: wrap; }
 .top-average-stat { min-width: 108px; margin-right: 2px; text-align: right; }
@@ -526,6 +611,9 @@ async function exportReport() {
 .answer-text { padding: 14px 16px; border-radius: 8px; background: rgba(64, 158, 255, 0.06); color: var(--el-text-color-regular); }
 .answer-files-block { margin-top: 22px; }
 .answer-files-block .block-label { color: var(--el-text-color-primary); font-size: 16px; font-weight: 700; }
+/* 答案结果文本与答案结果文件的标题样式保持一致 */
+.answer-block .block-label { color: var(--el-text-color-primary); font-size: 16px; font-weight: 700; }
+.answer-block { margin-top: 22px; }
 .answer-file-list { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-left: 3px solid var(--el-color-primary); border-radius: 4px; background: var(--el-color-primary-light-9); color: var(--el-text-color-primary); font-size: 16px; font-weight: 700; line-height: 1.7; }
 .answer-file-item { overflow-wrap: anywhere; }
 .answer-file-empty { padding: 10px 16px; border-left: 3px solid var(--el-border-color); border-radius: 4px; background: var(--el-fill-color-lighter); color: var(--el-text-color-secondary); font-size: 15px; line-height: 1.7; }

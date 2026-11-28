@@ -1,4 +1,33 @@
 // 全局样式
+
+// 全局界面缩放：所有页面（含 Element Plus 组件）整体适当放大。
+// 调整下面的系数即可：1 = 原始大小；建议范围 1.05 ~ 1.2。
+// 说明：项目里页面字号多为写死的 px，逐处改字号不可维护，
+// 用根节点 zoom 统一缩放等价于浏览器放大，文字/表格/间距同步变大。
+// 注意：zoom 只放在 #app 上，不能放在 html/body 上——Element Plus 的
+// 下拉/气泡弹层是 teleport 到 body 下的（不在 #app 内），html 缩放会让
+// popper 的定位坐标被二次放大，弹层全部飞位；放在 #app 上参考坐标与
+// 弹层坐标系一致，定位保持准确。
+:root {
+  --app-font-zoom: 1.1;
+}
+
+#app {
+  zoom: var(--app-font-zoom);
+}
+
+// teleport 到 body 的弹层（下拉菜单、气泡、消息等）不经过 #app 缩放，
+// 字号通过 Element Plus 字号变量对齐缩放后的页面观感
+// （html:root 提高优先级，保证覆盖 Element Plus 基础样式里的同名变量）
+html:root {
+  --el-font-size-extra-small: 13px;
+  --el-font-size-small: 14px;
+  --el-font-size-base: 15px;
+  --el-font-size-medium: 16px;
+  --el-font-size-large: 18px;
+  --el-font-size-extra-large: 22px;
+}
+
 // 顶部进度条颜色
 #nprogress .bar {
   z-index: 2400;

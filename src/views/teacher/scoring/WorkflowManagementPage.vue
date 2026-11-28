@@ -67,7 +67,7 @@
             <el-table-column label="关联考试" min-width="170"><template #default="{ row }">{{ row.examName }}</template></el-table-column>
             <el-table-column label="科目" min-width="140"><template #default="{ row }">{{ row.subjectLabel }}</template></el-table-column>
             <el-table-column label="创建时间" min-width="155"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
-            <el-table-column :label="isTrialGrading ? '试题数量' : '试卷数量'" width="105"><template #default="{ row }">{{ isTrialGrading ? row.totalQuestionCount : row.studentCount }} {{ isTrialGrading ? '道' : '份' }}</template></el-table-column>
+            <el-table-column label="试卷数量" width="105"><template #default="{ row }">{{ row.studentCount }} 份</template></el-table-column>
             <el-table-column v-if="!isTrialGrading" label="当前进度" min-width="190"><template #default="{ row }"><div class="grading-progress"><el-progress :percentage="row.progress" :stroke-width="8" /><span>{{ isFormalGrading ? `${row.completedCount}/${row.studentCount}` : `${row.gradedQuestionCount}/${row.totalQuestionCount}` }}</span></div></template></el-table-column>
             <el-table-column v-if="!isTrialGrading" label="状态" width="110"><template #default="{ row }"><el-tag :type="row.progress === 100 ? 'success' : 'warning'">{{ row.progress === 100 ? '已完成' : '未完成' }}</el-tag></template></el-table-column>
             <el-table-column label="操作" width="300" fixed="right">
@@ -91,7 +91,7 @@
       <el-form label-position="top" class="grading-task-form">
         <el-form-item label="要进行评分的试卷" required>
           <el-select v-model="taskForm.packageKey" filterable class="full-width" placeholder="选择已上传并解析的试卷包" @change="handleTaskPackageChange">
-            <el-option v-for="item in gradingPackageOptions" :key="item.key" :label="`${item.subjectLabel} / ${item.examName} / ${item.package_name}（${item.student_count} 份）`" :value="item.key" />
+            <el-option v-for="item in taskPackageOptions" :key="item.key" :label="`${item.examName} / ${stripParseTimestampSuffix(item.package_name)}（${item.student_count} 份）`" :value="item.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="阅卷标准" required>
@@ -114,7 +114,6 @@
             <el-option v-for="item in switchStandardOptions" :key="item.standard_id" :label="switchStandardLabel(item)" :value="item.standard_id" />
           </el-select>
         </el-form-item>
-        <el-alert type="warning" :closable="false" show-icon title="切换后任务将使用新标准评阅；已产生的评阅记录保留在原标准下，任务进度按新标准重新统计。" />
       </el-form>
       <template #footer>
         <el-button @click="switchStandardVisible = false">取消</el-button>
@@ -161,7 +160,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import StudentNoVirtualGrid from './components/StudentNoVirtualGrid.vue'
-import { createGradingTask, deleteGradingStandard, deleteGradingTask, deleteGradingTemplate, getAllPackages, getExams, getGradingStandardVersions, getGradingTasks, getGradingTemplates, getLocalPackage, getSubjects, switchGradingTaskStandard, type ExamGradingStandard, type ExamGradingTemplate, type ExamItem, type SubjectItem } from '@/api/teacher-scoring'
+import { createGradingTask, deleteGradingStandard, deleteGradingTask, deleteGradingTemplate, getAllPackages, getAnswerUploads, getExams, getGradingStandardVersions, getGradingTasks, getGradingTemplates, getLocalPackage, getSubjects, switchGradingTaskStandard, type ExamGradingStandard, type ExamGradingTemplate, type ExamItem, type SubjectItem } from '@/api/teacher-scoring'
+import { stripParseTimestampSuffix } from '@/utils/scoring-context'
 import { refreshGradingTaskSubMenus } from '@/router/core/MenuProcessor'
 import { listServices } from '@/api/mcp'
 import type { McpServiceInfo } from '@/types/marketplace'
@@ -185,6 +185,9 @@ const searchPlaceholder = computed(() => isStandards.value ? '搜索标准名称
 const statusOptions = computed(() => isStandards.value ? ['已启用'] : isTemplates.value ? ['可用'] : ['未完成', '已完成'])
 const subjects = ref<SubjectItem[]>([]); const rows = ref<Row[]>([]); const loading = ref(false)
 const gradingPackageOptions = ref<any[]>([])
+// 新增阅卷任务下拉的选项：仅保留答卷上传流程登记的试卷包，
+// 历史遗留（旧命名/旧流程）的包不再出现在可选项里；任务列表回显仍用全量集合
+const taskPackageOptions = ref<any[]>([])
 const expandedTaskKey = ref('')
 const taskDialogVisible = ref(false); const taskOptionLoading = ref(false); const taskSaving = ref(false)
 const standardCreateVisible = ref(false); const standardCreateLoading = ref(false); const standardCreateExamLoading = ref(false)
@@ -234,6 +237,24 @@ async function loadGradingPackageOptions() {
   })
   return [...latestByPackage.values()]
 }
+// 新增阅卷任务下拉只保留“答卷上传”流程登记的试卷包：历史遗留（旧命名/旧
+// 流程）的包虽然还在库里，但已被重新上传解析的包取代，不应再出现在选项里。
+// 上传记录拉取失败时退回全量列表，保证任务创建不被阻断。
+async function loadTaskPackageOptions(packageOptions: any[]) {
+  try {
+    const uploadResponse = await getAnswerUploads()
+    if ([0, 200].includes(uploadResponse?.code)) {
+      const linkedIds = new Set((uploadResponse.data || [])
+        .map((row: any) => String(row.local_package_id ?? ''))
+        .filter(Boolean))
+      if (linkedIds.size) {
+        const filtered = packageOptions.filter((item: any) => linkedIds.has(String(item.local_package_id)))
+        if (filtered.length) return filtered
+      }
+    }
+  } catch { /* 拉取上传记录失败时使用全量列表 */ }
+  return packageOptions
+}
 async function loadData() {
   loading.value = true
   try {
@@ -281,7 +302,7 @@ async function loadData() {
           subjectId: task.subject_id, examId: task.exam_id,
           examName: task.exam_name || packageOption?.examName || '',
           subjectLabel: task.subject_no ? `${task.subject_no} · ${task.subject_name}` : packageOption?.subjectLabel || '',
-          name: task.package_name || packageOption?.package_name || task.exam_name || '阅卷任务',
+          name: stripParseTimestampSuffix(String(task.package_name || '')) || stripParseTimestampSuffix(packageOption?.package_name) || task.exam_name || '阅卷任务',
           templateName: task.template_name || '', createdAt: task.created_at,
           studentCount, completedCount,
           gradedQuestionCount, totalQuestionCount,
@@ -390,7 +411,10 @@ const switchStandardId = ref<number | undefined>()
 
 const switchStandardLabel = (item: ExamGradingStandard) => {
   const currentMark = Number(switchStandardRow.value?.standard_id || 0) === Number(item.standard_id) ? '（当前使用）' : ''
-  return `阅卷标准 V${item.version_no || 1} · ${item.standard_items?.length || 0} 道题 · ${formatDate(item.created_at)}${currentMark}`
+  // 标准名称与阅卷标准管理页同一命名口径：{考试名}阅卷标准 + 版本号
+  const examName = String(switchStandardRow.value?.examName || '').trim()
+  const namePrefix = examName ? `${examName}阅卷标准 ` : '阅卷标准 '
+  return `${namePrefix}V${item.version_no || 1} · ${item.standard_items?.length || 0} 道题${currentMark}`
 }
 
 const openSwitchStandard = async (row: Row) => {
@@ -432,8 +456,11 @@ const createNew = async () => {
     taskStandardOptions.value = []
     taskDialogVisible.value = true
     try {
-      gradingPackageOptions.value = await loadGradingPackageOptions()
-      if (!gradingPackageOptions.value.length) ElMessage.info('请先在答卷上传页面完成试卷包上传和解析')
+      const packageOptions = await loadGradingPackageOptions()
+      // 全量集合供已有任务回显包信息；下拉选项只保留答卷上传流程登记的包
+      gradingPackageOptions.value = packageOptions
+      taskPackageOptions.value = await loadTaskPackageOptions(packageOptions)
+      if (!taskPackageOptions.value.length) ElMessage.info('请先在答卷上传页面完成试卷包上传和解析')
     } catch (error: any) {
       ElMessage.error(error?.response?.data?.message || error?.message || '读取已上传试卷包失败')
     }
@@ -647,7 +674,7 @@ const formatDate = (value?: string) => value ? String(value).replace('T', ' ').s
 const taskStandardLabel = (item: ExamGradingStandard) => {
   const selectedPackage = gradingPackageOptions.value.find((packageItem) => packageItem.key === taskForm.value.packageKey)
   const standardName = selectedPackage?.examName ? `${selectedPackage.examName}阅卷标准` : '阅卷标准'
-  return `${standardName} · V${item.version_no || 1} · ${item.standard_items?.length || 0} 道题 · ${formatDate(item.created_at)}`
+  return `${standardName} · V${item.version_no || 1} · ${item.standard_items?.length || 0} 道题`
 }
 onActivated(loadData)
 </script>

@@ -5,12 +5,17 @@
       :rows="temporaryTrialResults"
       :text-answer-rows="trialTextAnswerRows"
       :is-text-package="trialIsTextPackage"
+      :subject-id="String(route.params.subjectId || '')"
+      :exam-id="String(route.params.examId || '')"
+      :package-id="String(route.params.packageId || '')"
       @back="closeTemporaryTrialResults"
     />
     <el-card v-else-if="!resultsView">
       <template #header>
         <div class="card-header">
-          <span>{{ packageTitle }}</span>
+          <div class="card-header-main">
+            <ScoringContextLine :subject-id="String(route.params.subjectId || '')" :exam-id="String(route.params.examId || '')" :package-id="String(route.params.packageId || '')" :prefix="scoringMode === 'formal' ? '评阅' : '试阅'" />
+          </div>
         </div>
       </template>
 
@@ -66,9 +71,9 @@
               </el-select>
             </el-radio-group>
             <span class="selected-count trial-selected-count">已选 {{ selectedTrialQuestionIds.length }} 题，{{ trialStudentNos.length }} 位考生</span>
+            <span class="trial-selection-hint">请先勾选要试阅的题目</span>
           </div>
           <div class="trial-toolbar-right">
-            <el-button :disabled="!trialStudentNos.length" @click="clearTrialSelection">清空</el-button>
             <el-button
               type="primary"
               :disabled="!selectedTrialQuestionIds.length"
@@ -101,7 +106,7 @@
               :value="batch.index"
             />
           </el-select>
-          <span class="paper-selected-count">本批 {{ paperActionStudentCount }} 人</span>
+          <span class="paper-selected-count">本批 {{ paperActionStudentCount }} 人 · 试卷总份数 {{ packageStudentNos.length }} 份</span>
           <el-button
             class="paper-actions toolbar-paper-actions"
             type="primary"
@@ -221,7 +226,7 @@
               </template>
               <div class="collapse-question-content">
               <div v-if="!(topic.sub_question || []).length" class="question-card">
-                <div class="question-head"><span class="question-no">Q{{ topicIndex + 1 }}</span><strong>{{ getDisplayText(topic.question) || '未命名题目' }}</strong></div>
+                <div class="question-head"><span class="question-no">Q{{ topicIndex + 1 }}</span><span class="question-text">{{ getDisplayText(topic.question) || '未命名题目' }}</span></div>
                 <div v-if="topic.display_steps?.length" class="steps"><div v-for="(step, stepIndex) in topic.display_steps" :key="stepIndex"><span>（{{ stepIndex + 1 }}）</span>{{ getDisplayText(step) }}</div></div>
                 <div v-if="getStandaloneQuestionImages(topic).length" class="question-images"><el-tag v-for="image in getStandaloneQuestionImages(topic)" :key="image" size="small" type="info">参考图片：{{ image.split('/').pop() }}</el-tag></div>
                 <div v-if="scoringMode !== 'trial'" class="answer-panel">
@@ -233,13 +238,13 @@
                     <el-table-column prop="reason" label="答案文件说明" min-width="220" show-overflow-tooltip />
                     <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
                   </el-table>
-                  <el-table v-else-if="getQuestionTextRows(currentStudent.student_no).length" :data="getQuestionTextRows(currentStudent.student_no)" size="small" border>
-                    <el-table-column prop="content" label="文本内容" min-width="220" />
-                    <el-table-column prop="source" label="文本来源" min-width="220" show-overflow-tooltip />
-                    <el-table-column prop="sourceType" label="来源文件类型" width="110" />
-                    <el-table-column prop="description" label="答案内容说明" min-width="140" />
-                    <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
-                  </el-table>
+                  <div v-else-if="getQuestionTextRows(currentStudent.student_no, String(topicIndex + 1)).length" class="answer-text-box">
+                    <div v-for="(row, rowIndex) in getQuestionTextRows(currentStudent.student_no, String(topicIndex + 1))" :key="rowIndex" class="answer-text-line">
+                      <span class="answer-text-desc">{{ row.description }}</span>
+                      <span class="answer-text-content">{{ row.content }}<el-tag v-if="row.status === 'ABNORMAL'" size="small" type="warning" class="answer-abnormal-tag">异常</el-tag></span>
+                    </div>
+                    <div v-if="textRowsSource(getQuestionTextRows(currentStudent.student_no, String(topicIndex + 1)))" class="answer-text-source">{{ textRowsSource(getQuestionTextRows(currentStudent.student_no, String(topicIndex + 1))) }}</div>
+                  </div>
                   <el-empty v-else description="本题暂无答案结果文件" :image-size="44" />
                 </div>
               </div>
@@ -257,7 +262,7 @@
                     @change="toggleTrialQuestionSelection(topicIndex, subIndex, Boolean($event))"
                   />
                   <span class="question-no">Q{{ topicIndex + 1 }}{{ (topic.sub_question || []).length > 1 ? `.${subIndex + 1}` : '' }}</span>
-                  <strong>{{ getDisplayText(subQuestion.question) || '未命名题目' }}</strong>
+                  <span class="question-text">{{ getDisplayText(subQuestion.question) || '未命名题目' }}</span>
                   <div class="question-head-actions" @click.stop>
                     <template v-if="!scoringMode">
                       <el-tag
@@ -295,13 +300,13 @@
                     <el-table-column prop="reason" label="答案文件说明" min-width="220" show-overflow-tooltip />
                     <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
                   </el-table>
-                  <el-table v-else-if="getQuestionTextRows(currentStudent.student_no).length" :data="getQuestionTextRows(currentStudent.student_no)" size="small" border>
-                    <el-table-column prop="content" label="文本内容" min-width="220" />
-                    <el-table-column prop="source" label="文本来源" min-width="220" show-overflow-tooltip />
-                    <el-table-column prop="sourceType" label="来源文件类型" width="110" />
-                    <el-table-column prop="description" label="答案内容说明" min-width="140" />
-                    <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
-                  </el-table>
+                  <div v-else-if="getQuestionTextRows(currentStudent.student_no, `${topicIndex + 1}.${subIndex + 1}`).length" class="answer-text-box">
+                    <div v-for="(row, rowIndex) in getQuestionTextRows(currentStudent.student_no, `${topicIndex + 1}.${subIndex + 1}`)" :key="rowIndex" class="answer-text-line">
+                      <span class="answer-text-desc">{{ row.description }}</span>
+                      <span class="answer-text-content">{{ row.content }}<el-tag v-if="row.status === 'ABNORMAL'" size="small" type="warning" class="answer-abnormal-tag">异常</el-tag></span>
+                    </div>
+                    <div v-if="textRowsSource(getQuestionTextRows(currentStudent.student_no, `${topicIndex + 1}.${subIndex + 1}`))" class="answer-text-source">{{ textRowsSource(getQuestionTextRows(currentStudent.student_no, `${topicIndex + 1}.${subIndex + 1}`)) }}</div>
+                  </div>
                   <el-empty v-else description="本题暂无答案结果文件" :image-size="44" />
                 </div>
                 <!-- 查看模式：试阅与评阅结果分别成行展示，互不覆盖 -->
@@ -382,16 +387,19 @@
             <el-radio label="overwrite">重新评阅并覆盖</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="每批数量">
-          <el-input-number v-model="formalForm.batch_size" :min="1" :max="10" />
-        </el-form-item>
       </el-form>
       <div class="formal-preview">
-        <div>预计评阅：<strong>{{ formalPreview.total }}</strong> 个评阅任务</div>
-        <div>已跳过：<strong>{{ formalPreview.skipped }}</strong> 个已有正式结果</div>
-        <div>缺少标准/MCP：<strong>{{ formalPreview.invalid }}</strong> 个</div>
+      <div>预计评阅：<strong>{{ formalPreview.total }}</strong> 个评阅任务</div>
+      <div>已跳过：<strong>{{ formalPreview.skipped }}</strong> 个已有正式结果</div>
+      <div>缺少标准/MCP：<strong>{{ formalPreview.invalid }}</strong> 个</div>
+    </div>
+    <div v-if="formalGradingRunning" class="formal-grading-progress">
+      <el-progress :percentage="formalProgressPercent" :stroke-width="10" />
+      <div class="formal-progress-text">
+        后端并发评分中：已完成 {{ formalProgress.completed }} / {{ formalProgress.total }} 个任务{{ formalProgress.failed ? `（失败 ${formalProgress.failed}）` : '' }}，每完成一题立即保存
       </div>
-      <template #footer>
+    </div>
+    <template #footer>
         <el-button @click="formalDialogVisible = false">取消</el-button>
         <el-button type="warning" :loading="formalGradingRunning" @click="startFormalGrading">开始正式评阅</el-button>
       </template>
@@ -872,13 +880,13 @@
               </div>
               <div v-if="getSummaryDetailTextRows(item).length" class="paper-summary-detail-block paper-summary-detail-block-wide">
                 <span>答案结果文本</span>
-                <el-table :data="getSummaryDetailTextRows(item)" size="small" border>
-                  <el-table-column prop="content" label="文本内容" min-width="200" />
-                  <el-table-column prop="source" label="文本来源" min-width="180" show-overflow-tooltip />
-                  <el-table-column prop="sourceType" label="来源文件类型" width="100" />
-                  <el-table-column prop="description" label="答案内容说明" min-width="130" />
-                  <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" :type="row.status === 'ABNORMAL' ? 'warning' : 'success'">{{ row.status === 'ABNORMAL' ? '异常' : '正常' }}</el-tag></template></el-table-column>
-                </el-table>
+                <div class="answer-text-box">
+                  <div v-for="(row, rowIndex) in getSummaryDetailTextRows(item)" :key="rowIndex" class="answer-text-line">
+                    <span class="answer-text-desc">{{ row.description }}</span>
+                    <span class="answer-text-content">{{ row.content }}<el-tag v-if="row.status === 'ABNORMAL'" size="small" type="warning" class="answer-abnormal-tag">异常</el-tag></span>
+                  </div>
+                  <div v-if="textRowsSource(getSummaryDetailTextRows(item))" class="answer-text-source">{{ textRowsSource(getSummaryDetailTextRows(item)) }}</div>
+                </div>
               </div>
               <div v-if="!getSummaryDetailFileRows(item).length && !getSummaryDetailTextRows(item).length" class="paper-summary-detail-block">
                 <span>答题结果</span>
@@ -1031,7 +1039,7 @@
     <div v-if="gradingEmbedLoading" class="grading-embed-overlay">
       <div class="grading-embed-card">
         <div class="grading-embed-text">{{ trialProgress.stage }}</div>
-        <div class="grading-embed-text">正在{{ scoringMode === 'formal' ? '评阅' : '试阅' }}：{{ trialProgress.studentTotal }} 位考生 · {{ trialProgress.completed }} / {{ trialProgress.total }} 个评分任务</div>
+        <div class="grading-embed-text">正在{{ scoringMode === 'formal' ? '评阅' : '试阅' }}：{{ trialProgress.completed }} / {{ trialProgress.total }} {{ scoringMode === 'formal' ? '位考生' : '个任务' }}</div>
         <el-progress
           class="grading-embed-progress"
           :percentage="trialProgress.percentage"
@@ -1064,14 +1072,16 @@ import * as XLSX from 'xlsx';
 import { listServices } from '@/api/mcp';
 import { apiPrefix } from '@/api/index';
 import type { McpServiceInfo } from '@/types/marketplace';
-import { createGradingStandard, createGradingTemplate, deleteLocalGradingRecords, getCandidateAssignments, getGradingStandardVersions, getGradingTemplates, getLatestGradingStandard, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, getLocalPackageResultData, gradeBatchWithMcp, saveLocalGradingRecords, updateLocalGradingRound, type BatchGradingResult, type BatchGradingTarget, type CandidateAssignmentRecord, type ExamGradingStandard, type ExamGradingTemplate, type GradingStandardItem, type LocalGradingRecordItem } from '@/api/teacher-scoring';
+import { createGradingStandard, createGradingTemplate, deleteLocalGradingRecords, getCandidateAssignments, getGradingStandardVersions, getGradingTemplates, getLatestGradingStandard, getLocalGradingRecords, getLocalPackage as getLocalPackageRegistration, getLocalPackageResultData, gradeBatchWithMcpAsync, saveLocalGradingRecords, updateLocalGradingRound, type BatchGradingResult, type BatchGradingTarget, type CandidateAssignmentRecord, type ExamGradingStandard, type ExamGradingTemplate, type GradingStandardItem, type LocalGradingRecordItem } from '@/api/teacher-scoring';
 import { ArrowLeft, ArrowRight, Document, Download, WarningFilled } from '@element-plus/icons-vue';
 import MetricStatCard from '@/components/MetricStatCard.vue';
 import ScoreDistributionChart from './components/ScoreDistributionChart.vue';
 import TrialGradingResultsPage from './components/TrialGradingResultsPage.vue';
 import { buildBlankPaperQuestions } from '@/utils/blank-paper-display';
 import { findStandardPaperStructure } from '@/utils/paper-structure';
-import { getAssignmentFileRows, getAssignmentQuestionFiles, getAssignmentTextRows, type AssignmentTextRow } from '@/utils/assignment-files';
+import { getAssignmentFileRows, getAssignmentQuestionFiles, getAssignmentTextRowsForQuestion, type AssignmentTextRow } from '@/utils/assignment-files';
+import ScoringContextLine from '@/components/ScoringContextLine.vue';
+import { fetchScoringContextNames } from '@/utils/scoring-context';
 import {
   buildImageResolver,
   calculateTotalScore,
@@ -1270,14 +1280,31 @@ const trialStudentComparePage = ref(1);
 const formalStudentComparePage = ref(1);
 const formalBatchResult = ref<BatchGradingResult | null>(null);
 const formalProgress = ref({ completed: 0, total: 0, failed: 0 });
+const formalProgressPercent = computed(() => {
+  const total = Number(formalProgress.value.total || 0);
+  if (!total) return 0;
+  return Math.round((Number(formalProgress.value.completed || 0) / total) * 100);
+});
 const formalForm = ref({
   template_id: undefined as number | undefined,
   scope: 'ungraded',
   overwrite: 'skip',
-  batch_size: 4
 });
 
 const packageTitle = computed(() => localPackage.value ? `${localPackage.value.package_name} - 试卷包详情` : '试卷包详情');
+// 上下文链：科目 · 考试 · 试卷包（导出文件命名用）
+const scoringChain = ref('');
+watch(
+  () => [String(route.params.subjectId || ''), String(route.params.examId || ''), String(route.params.packageId || ''), localPackage.value?.package_name],
+  async () => {
+    const names = await fetchScoringContextNames(
+      String(route.params.subjectId || ''), String(route.params.examId || ''), String(route.params.packageId || ''),
+    )
+    const parts = [names.subjectName, names.examName, names.packageName].filter(Boolean)
+    if (parts.length) scoringChain.value = parts.join(' · ')
+  },
+  { immediate: true }
+)
 
 interface StandardFormItem extends Omit<GradingStandardItem, 'mcp_service_id'> {
   local_id: string;
@@ -1325,7 +1352,7 @@ const getSummaryDetailTextRows = (item: any) => {
   const normalizedStudentNo = String(paperSummaryDetailRow.value?.student_no || '').trim();
   const assignment = candidateAssignmentMap.value[normalizedStudentNo]
     || Object.entries(candidateAssignmentMap.value).find(([key]) => key.trim() === normalizedStudentNo)?.[1];
-  return getAssignmentTextRows(assignment);
+  return getAssignmentTextRowsForQuestion(assignment, item.question_no);
 };
 interface TemplateQuestionRow {
   question_no: string;
@@ -1821,9 +1848,9 @@ const formalStudentBatches = computed<FormalStudentBatch[]>(() => {
   let startIndex = 0;
   let batchIndex = 0;
   while (startIndex < students.length) {
-    // 保持教师看到的分段形式：每批100时显示 1~99、100~199，最后一批到总人数。
-    const count = batchIndex === 0 && size > 1 ? size - 1 : size;
-    const endIndex = Math.min(students.length - 1, startIndex + count - 1);
+    // 每批固定 N 个：6 人每批 6 → 一批 1~6；每批 100 → 1~100、101~200……
+    // 最后一批不足 N 个时到总人数为止。
+    const endIndex = Math.min(students.length - 1, startIndex + size - 1);
     batches.push({
       index: batchIndex,
       start: startIndex + 1,
@@ -1921,12 +1948,6 @@ const extractAndStartTrial = () => {
   if (!trialStudentNos.value.length) return;
   trialSelectionConfirmed.value = false;
   trialSelectionPreviewVisible.value = true;
-};
-const clearTrialSelection = () => {
-  trialStudentNos.value = [];
-  trialRangeStartNo.value = '';
-  trialRangeEndNo.value = '';
-  trialSelectionConfirmed.value = false;
 };
 const confirmTrialSelection = () => {
   trialSelectionConfirmed.value = true;
@@ -2217,6 +2238,9 @@ const loadCandidateAssignmentResults = async () => {
 const loadResultData = async () => {
   const mode = resultsView.value;
   if (mode !== 'trial' && mode !== 'formal') return;
+  // keepAlive 页签切回/路由切换瞬间 route.params 可能还没有本题的 ID，
+  // 拼出 subjects//exams// 空段 URL 会 404，此时直接跳过本次刷新。
+  if (!String(route.params.subjectId || '') || !String(route.params.examId || '') || !packageId.value) return;
   loading.value = true;
   try {
     const response = await getLocalPackageResultData(
@@ -2695,7 +2719,8 @@ const exportSummaryExcel = (mode: 'trial' | 'formal') => {
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, mode === 'trial' ? '试阅结果' : '正式结果');
-  const fileName = `${sanitizeFileName(localPackage.value?.package_name || packageTitle.value)}_${mode === 'trial' ? '试阅' : '正式'}结果汇总.xlsx`;
+  const chain = sanitizeFileName(scoringChain.value || localPackage.value?.package_name || packageTitle.value);
+  const fileName = `${chain}_${mode === 'trial' ? '试阅' : '正式'}结果汇总.xlsx`;
   XLSX.writeFile(workbook, fileName, { cellStyles: true });
 };
 
@@ -2815,7 +2840,7 @@ const trialTextAnswerRows = computed(() => {
     if (map[key]) return;
     const assignment = candidateAssignmentMap.value[studentNo]
       || Object.entries(candidateAssignmentMap.value).find(([key2]) => key2.trim() === studentNo)?.[1];
-    map[key] = getAssignmentTextRows(assignment);
+    map[key] = getAssignmentTextRowsForQuestion(assignment, questionNo);
   });
   return map;
 });
@@ -3437,14 +3462,21 @@ const getExtractedQuestionFileRows = (studentNo: string, questionNo: string, que
     || Object.entries(candidateAssignmentMap.value).find(([key]) => key.trim() === normalizedStudentNo)?.[1];
   return getAssignmentFileRows(assignment, questionNo, questionText);
 };
-// 无答案结果文件时的文本答案表格行：用归属结果里的抽取内容
-// （11A 等纯文本 AI 题的字段，每字段一行）；没有抽取内容就返回空
-// （显示"无"），答卷文档转换出的材料文本不冒充考生答案。
-const getQuestionTextRows = (studentNo: string) => {
+// 无答案结果文件时的文本答案表格行：用归属结果里**本题自己的**抽取内容
+// （11A 等纯文本 AI 题的字段，每字段一行）；本题没有抽取内容就返回空
+// （显示"无"），答卷文档转换出的材料文本不冒充考生答案。不能用考生级
+// extractedContent——多题科目里它只装了一道题的字段，别的题会串题显示。
+const getQuestionTextRows = (studentNo: string, questionNo: string) => {
   const normalizedStudentNo = String(studentNo || '').trim();
   const assignment = candidateAssignmentMap.value[normalizedStudentNo]
     || Object.entries(candidateAssignmentMap.value).find(([key]) => key.trim() === normalizedStudentNo)?.[1];
-  return getAssignmentTextRows(assignment);
+  return getAssignmentTextRowsForQuestion(assignment, questionNo);
+};
+
+// 抽取行来源去重（同一题的字段通常来自同一份文档）
+const textRowsSource = (rows: Array<{ source?: string }>) => {
+  const sources = Array.from(new Set(rows.map((row) => String(row.source || '').trim()).filter(Boolean)));
+  return sources.length ? `来源：${sources.join('；')}` : '';
 };
 const getQuestionNode = (student: LocalStudentAnswer, questionNo: string) => {
   const parsed = parseQuestionNoToIndexes(questionNo);
@@ -3670,34 +3702,34 @@ const startFormalGrading = async () => {
   formalGradingRunning.value = true;
   formalBatchResult.value = null;
   formalProgress.value = { completed: 0, total: targets.length, failed: 0 };
-  const results: BatchGradingResult['results'] = [];
-  const batchSize = Math.max(1, Number(formalForm.value.batch_size || 4));
   try {
-    for (let index = 0; index < targets.length; index += batchSize) {
-      const chunk = targets.slice(index, index + batchSize);
-      const response = await gradeBatchWithMcp({
-        subject_id: String(route.params.subjectId),
-        exam_id: String(route.params.examId),
-        local_package_id: localPackage.value?.local_package_id || packageId.value,
-        package_fingerprint: localPackage.value?.package_fingerprint,
-        quick_fingerprint: localPackage.value?.quick_fingerprint,
-        student_no_hash: localPackage.value?.student_no_hash,
-        is_trial: false,
-        mode: 'formal-grade',
-        targets: chunk
-      });
-      const batch = response.data as BatchGradingResult;
-      results.push(...(batch?.results || []));
-      formalProgress.value.completed += chunk.length;
-      formalProgress.value.failed += Number(batch?.failed_count || 0);
-    }
+    // 一次性提交全部目标：后端线程池按“题 × 考生”并发评分，每完成一题
+    // 立即落一条评分记录；前端轮询进度（并发数沿用原分批大小的设置）。
+    const response = await gradeBatchWithMcpAsync({
+      subject_id: String(route.params.subjectId),
+      exam_id: String(route.params.examId),
+      local_package_id: localPackage.value?.local_package_id || packageId.value,
+      package_fingerprint: localPackage.value?.package_fingerprint,
+      quick_fingerprint: localPackage.value?.quick_fingerprint,
+      student_no_hash: localPackage.value?.student_no_hash,
+      is_trial: false,
+      mode: 'formal-grade',
+      targets
+    }, (progress) => {
+      formalProgress.value = {
+        completed: progress.completed,
+        total: progress.total || targets.length,
+        failed: progress.failed_count
+      };
+    });
+    const batch = response.data as BatchGradingResult;
     formalBatchResult.value = {
       status: formalProgress.value.failed ? 'partial_success' : 'success',
       mode: 'formal-grade',
       total: targets.length,
       success_count: targets.length - formalProgress.value.failed,
       failed_count: formalProgress.value.failed,
-      results
+      results: batch?.results || []
     };
     await loadGradingRecords();
     formalDialogVisible.value = false;
@@ -4816,6 +4848,57 @@ const handleKeydown = (event: KeyboardEvent) => {
   white-space: nowrap;
 }
 
+.trial-selection-hint {
+  margin-left: 10px;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #e6a23c;
+}
+
+/* 考生答案抽取字段大框（与考生评阅详情页同款样式） */
+.answer-text-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.answer-text-line {
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-desc {
+  color: #354861;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.answer-text-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-text-source {
+  color: #8b97a8;
+  font-size: 12px;
+}
+
+.answer-abnormal-tag {
+  margin-left: 6px;
+}
+
+.card-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .trial-toolbar-right {
   margin-left: auto;
   justify-content: flex-end;
@@ -4838,6 +4921,16 @@ const handleKeydown = (event: KeyboardEvent) => {
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+.formal-grading-progress {
+  margin-top: 14px;
+}
+
+.formal-grading-progress .formal-progress-text {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 /* 单选（随机抽取/区间抽取、自选评阅/按批评阅）：选中蓝底圆点+蓝字，与设计稿一致 */
@@ -5008,7 +5101,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 .paper-range-select {
-  width: 150px;
+  width: 240px;
 }
 
 .paper-range-sep {
@@ -5263,11 +5356,11 @@ const handleKeydown = (event: KeyboardEvent) => {
   line-height: 1.6;
 }
 
-.question-head strong {
+.question-head .question-text {
   flex: 1;
   min-width: 0;
   color: #111827;
-  font-weight: 700;
+  font-weight: 400;
   font-size: 16px;
 }
 

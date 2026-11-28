@@ -49,7 +49,7 @@
           </template>
         </el-table-column>
         <el-table-column label="考试时间" min-width="180">
-          <template #default="{ row }">{{ formatDateTime(row.exam_time) }}</template>
+          <template #default="{ row }">{{ formatDate(row.exam_time) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
@@ -81,17 +81,28 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="考试名称" prop="exam_name">
-          <el-input v-model="form.exam_name" placeholder="请输入考试名称" />
-        </el-form-item>
-        <el-form-item label="考试时间" prop="exam_time">
-          <el-date-picker
-            v-model="form.exam_time"
-            type="datetime"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            placeholder="请选择考试时间"
-            style="width: 100%"
-          />
+        <el-row :gutter="12">
+          <el-col :span="14">
+            <el-form-item label="考试时间" prop="exam_time">
+              <el-date-picker
+                v-model="form.exam_time"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择考试日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="10">
+            <el-form-item label="考试场次" prop="exam_session">
+              <el-select v-model="form.exam_session" placeholder="请选择场次" style="width: 100%">
+                <el-option v-for="session in sessionOptions" :key="session" :label="session" :value="session" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="考试名称">
+          <el-input :model-value="generatedExamName" placeholder="选择考试日期与场次后自动生成" disabled />
         </el-form-item>
         <el-form-item label="空白试卷" prop="blank_paper">
           <el-upload
@@ -109,22 +120,30 @@
           </div>
         </el-form-item>
         <el-form-item label="素材文件夹" prop="material_files">
-          <el-upload
-            :auto-upload="false"
-            :multiple="true"
-            :directory="true"
-            :show-file-list="false"
-            :on-change="handleMaterialFileChange"
-          >
-            <el-button>选择素材文件夹</el-button>
-            <template #tip>
-              <div class="el-upload__tip">用于后续题目的素材文件，当前仅保存上传内容，暂不参与考试解析。</div>
-            </template>
-          </el-upload>
+          <div class="material-folder-field">
+            <el-button @click="triggerMaterialFolderSelect">选择素材文件夹</el-button>
+            <input
+              ref="materialFolderInput"
+              type="file"
+              webkitdirectory
+              multiple
+              style="display: none"
+              @change="handleMaterialFolderChange"
+            >
+            <div class="el-upload__tip">评阅时用素材文件名与考生提交的工程/会话文件做比对，考生缺了名单中的素材会写入复核评语。</div>
+          </div>
           <div v-if="materialFiles.length" class="selected-material-files">
             <el-icon><FolderOpened /></el-icon>
-            <span>已选择 {{ materialFiles.length }} 个素材文件</span>
+            <span>已选择文件夹「{{ selectedMaterialFolderName }}」，共 {{ materialFiles.length }} 个文件</span>
             <el-button link type="danger" @click="clearMaterialFiles">清空</el-button>
+          </div>
+          <div
+            v-else-if="existingMaterialFolderName"
+            class="selected-material-files"
+          >
+            <el-icon><FolderOpened /></el-icon>
+            <span>已保存素材文件夹「{{ existingMaterialFolderName }}」，重新选择将整体替换</span>
+            <el-button link type="danger" @click="clearMaterialFiles">删除</el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -171,23 +190,34 @@ const editingExamId = ref<number>()
 const formRef = ref<FormInstance>()
 const form = reactive<{
   subject_id?: number
-  exam_name: string
   exam_time: string
+  exam_session: string
 }>({
   subject_id: undefined,
-  exam_name: '',
-  exam_time: ''
+  exam_time: '',
+  exam_session: ''
 })
 const blankPaperFile = ref<File>()
 const materialFiles = ref<File[]>([])
+const materialFolderInput = ref<HTMLInputElement | null>(null)
+const existingMaterialFolderName = ref('')
+const removeMaterialFolder = ref(false)
 const existingBlankPaperName = ref('')
 const blankPaperDisplayName = computed(() => blankPaperFile.value?.name || existingBlankPaperName.value)
 
 const subjectById = computed(() => new Map(subjects.value.map((subject) => [subject.subject_id, subject])))
 const dialogTitle = computed(() => (isEditing.value ? '编辑考试' : '新增考试'))
+const sessionOptions = Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index))
+// 考试名称由「科目名 + 考试年月(YYYYMM) + 场次」自动生成，例：大学信息技术基础202611-A
+const generatedExamName = computed(() => {
+  const subject = form.subject_id ? subjectById.value.get(form.subject_id) : undefined
+  if (!subject || !form.exam_time || !form.exam_session) return ''
+  const yearMonth = form.exam_time.replace(/-/g, '').slice(0, 6)
+  return `${subject.subject_name}${yearMonth}-${form.exam_session}`
+})
 const rules: FormRules = {
   subject_id: [{ required: true, message: '请选择所属科目', trigger: 'change' }],
-  exam_name: [{ required: true, message: '请输入考试名称', trigger: 'blur' }]
+  exam_session: [{ required: true, message: '请选择考试场次', trigger: 'change' }]
 }
 
 // 科目管理与考试管理会被 KeepAlive 缓存；每次切回考试管理时刷新科目列表。
@@ -244,11 +274,13 @@ function openCreateDialog() {
   isEditing.value = false
   editingExamId.value = undefined
   form.subject_id = selectedSubjectId.value
-  form.exam_name = ''
   form.exam_time = ''
+  form.exam_session = ''
   blankPaperFile.value = undefined
   materialFiles.value = []
   existingBlankPaperName.value = ''
+  existingMaterialFolderName.value = ''
+  removeMaterialFolder.value = false
   dialogVisible.value = true
 }
 
@@ -256,11 +288,13 @@ function openEditDialog(exam: ExamItem) {
   isEditing.value = true
   editingExamId.value = exam.id
   form.subject_id = exam.subject_id
-  form.exam_name = exam.exam_name
-  form.exam_time = normalizeDateTime(exam.exam_time)
+  form.exam_time = normalizeDateTime(exam.exam_time).slice(0, 10)
+  form.exam_session = /-([A-Z])$/.exec(exam.exam_name || '')?.[1] || ''
   blankPaperFile.value = undefined
   materialFiles.value = []
   existingBlankPaperName.value = exam.blank_paper_path?.split('/').pop() || ''
+  existingMaterialFolderName.value = (exam.material_path || '').split('/').pop() || ''
+  removeMaterialFolder.value = false
   dialogVisible.value = true
 }
 
@@ -269,28 +303,49 @@ function handleBlankPaperChange(file: UploadFile) {
   if (file.raw) existingBlankPaperName.value = ''
 }
 
-function handleMaterialFileChange(file: UploadFile) {
-  if (!file.raw) return
-  const exists = materialFiles.value.some((item) => (
-    item.name === file.raw?.name && item.size === file.raw?.size && item.lastModified === file.raw?.lastModified
-  ))
-  if (!exists) materialFiles.value = [...materialFiles.value, file.raw]
+// 素材文件夹选择：浏览器原生 webkitdirectory 输入（Element Plus 的
+// el-upload 不支持选文件夹），选中后整包替换，File 上保留
+// webkitRelativePath 供上传时还原目录层级。
+function triggerMaterialFolderSelect() {
+  materialFolderInput.value?.click()
+}
+
+const selectedMaterialFolderName = computed(() => {
+  const first = materialFiles.value[0] as (File & { webkitRelativePath?: string }) | undefined
+  const relative = first?.webkitRelativePath || first?.name || ''
+  return relative.split('/')[0] || ''
+})
+
+function handleMaterialFolderChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  materialFiles.value = Array.from(input.files || [])
+  removeMaterialFolder.value = false
+  // 清空 input，允许再次选择同一个文件夹
+  input.value = ''
 }
 
 function clearMaterialFiles() {
   materialFiles.value = []
+  if (materialFolderInput.value) materialFolderInput.value.value = ''
+  // 编辑模式下点「删除」= 移除已保存的素材文件夹（提交时带删除标志）
+  removeMaterialFolder.value = isEditing.value && Boolean(existingMaterialFolderName.value)
 }
 
 async function submitForm() {
   if (!formRef.value || !form.subject_id) return
   try {
     await formRef.value.validate()
+    if (!generatedExamName.value) {
+      ElMessage.warning('请先选择考试日期与场次，自动生成考试名称')
+      return
+    }
     submitting.value = true
     const payload = {
-      exam_name: form.exam_name.trim(),
+      exam_name: generatedExamName.value,
       exam_time: form.exam_time || undefined,
       blank_paper: blankPaperFile.value,
-      material_files: materialFiles.value
+      material_files: materialFiles.value,
+      remove_material_folder: removeMaterialFolder.value || undefined
     }
     const response = isEditing.value && editingExamId.value
       ? await updateExam(form.subject_id, editingExamId.value, payload)
@@ -335,8 +390,8 @@ function normalizeDateTime(value?: string) {
   return value ? value.replace('T', ' ').slice(0, 19) : ''
 }
 
-function formatDateTime(value?: string) {
-  return value ? normalizeDateTime(value) : '未设置'
+function formatDate(value?: string) {
+  return value ? normalizeDateTime(value).slice(0, 10) : '未设置'
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -364,6 +419,9 @@ function errorMessage(error: unknown, fallback: string) {
 .selected-blank-paper span { min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
 .selected-material-files { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--el-text-color-regular); }
 .selected-material-files .el-icon { color: var(--el-color-primary); }
+.selected-material-files span { min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+.material-folder-field { width: 100%; }
+.material-folder-field .el-upload__tip { margin-top: 8px; line-height: 1.6; }
 @media (max-width: 640px) {
   .page-header, .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar .el-select, .toolbar .el-input { width: 100%; max-width: none; }
