@@ -13,3 +13,6 @@ src/types/import/components.d.ts
 # Local tooling artifacts
 .zcode/
 .codex-ppt-work/
+
+# Local-only docs
+/docs/数据库设计文档.md
